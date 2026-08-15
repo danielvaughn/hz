@@ -1,5 +1,8 @@
 <script lang="ts">
 	import IntentEditor from '$lib/components/IntentEditor.svelte';
+	import Repl from '$lib/components/Repl.svelte';
+	import SourceViewer from '$lib/components/SourceViewer.svelte';
+	import { presentableDiff } from '@codemirror/merge';
 	import { onMount } from 'svelte';
 
 	const MIN_SPLIT = 20;
@@ -8,12 +11,32 @@
 	const STORAGE_KEY = 'project:default';
 	const SAVE_DELAY = 120;
 
+	type OutputTab = 'source' | 'repl';
 	type PersistenceState = 'loading' | 'saved' | 'saving' | 'error';
+	type ReconciliationState = 'idle' | 'generating' | 'reviewing' | 'error';
 
-	type StoredIntent = {
+	type StoredIntentV1 = {
 		version: 1;
 		draftIntent: string;
 		committedIntent: string;
+	};
+
+	type StoredProject = {
+		version: 2;
+		draftIntent: string;
+		committedIntent: string;
+		committedSource: string;
+		proposedSource: string | null;
+		proposalIntent: string | null;
+		proposalSummary: string;
+		proposalAssumptions: string[];
+		selectedOutputTab: OutputTab;
+	};
+
+	type ReconcileResponse = {
+		proposedSource: string;
+		summary: string;
+		assumptions: string[];
 	};
 
 	let workspace: HTMLElement;
@@ -22,7 +45,15 @@
 	let stacked = $state(false);
 	let draftIntent = $state('');
 	let committedIntent = $state('');
+	let committedSource = $state('');
+	let proposedSource = $state<string | null>(null);
+	let proposalIntent = $state<string | null>(null);
+	let proposalSummary = $state('');
+	let proposalAssumptions = $state<string[]>([]);
+	let selectedOutputTab = $state<OutputTab>('source');
 	let persistenceState = $state<PersistenceState>('loading');
+	let reconciliationState = $state<ReconciliationState>('idle');
+	let reconciliationError = $state('');
 	let storage: LocalForage | undefined;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let saveRevision = 0;
@@ -30,12 +61,21 @@
 	let editedBeforeHydration = false;
 
 	let dirty = $derived(draftIntent !== committedIntent);
+	let commitDisabled = $derived(
+		!hydrated ||
+		!dirty ||
+		persistenceState === 'error' ||
+		reconciliationState === 'generating'
+	);
 	let statusLabel = $derived.by(() => {
+		if (reconciliationState === 'generating') return 'Reconciling intent';
 		if (persistenceState === 'loading') return 'Loading draft';
 		if (persistenceState === 'error') return 'Storage unavailable';
 		if (persistenceState === 'saving') return 'Saving draft';
 		return dirty ? 'Uncommitted changes' : 'Synchronized';
 	});
+	let displayedSource = $derived(proposedSource ?? committedSource);
+	let sourceViewKey = $derived(`${proposedSource === null ? 'committed' : 'proposal'}:${displayedSource}`);
 
 	function clamp(value: number) {
 		return Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, value));
@@ -66,7 +106,7 @@
 		if (divider.hasPointerCapture(event.pointerId)) divider.releasePointerCapture(event.pointerId);
 	}
 
-	function handleKeydown(event: KeyboardEvent) {
+	function handleDividerKeydown(event: KeyboardEvent) {
 		let nextSplit = split;
 
 		switch (event.key) {
@@ -96,21 +136,26 @@
 		split = clamp(nextSplit);
 	}
 
-	function handleIntentChange(value: string) {
-		draftIntent = value;
+	function getProjectSnapshot(): StoredProject {
+		return {
+			version: 2,
+			draftIntent,
+			committedIntent,
+			committedSource,
+			proposedSource,
+			proposalIntent,
+			proposalSummary,
+			proposalAssumptions: [...proposalAssumptions],
+			selectedOutputTab
+		};
+	}
 
-		if (!hydrated || !storage) {
-			editedBeforeHydration = true;
-			return;
-		}
+	function schedulePersistence() {
+		if (!hydrated || !storage) return;
 
 		persistenceState = 'saving';
 		const revision = ++saveRevision;
-		const snapshot: StoredIntent = {
-			version: 1,
-			draftIntent,
-			committedIntent
-		};
+		const snapshot = getProjectSnapshot();
 
 		if (saveTimer) clearTimeout(saveTimer);
 		saveTimer = setTimeout(async () => {
@@ -121,6 +166,100 @@
 				if (revision === saveRevision) persistenceState = 'error';
 			}
 		}, SAVE_DELAY);
+	}
+
+	function handleIntentChange(value: string) {
+		draftIntent = value;
+
+		if (!hydrated) {
+			editedBeforeHydration = true;
+			return;
+		}
+
+		schedulePersistence();
+	}
+
+	function selectOutputTab(tab: OutputTab) {
+		if (selectedOutputTab === tab) return;
+		selectedOutputTab = tab;
+		schedulePersistence();
+	}
+
+	function formatIntentDiff(previous: string, next: string) {
+		return JSON.stringify(
+			presentableDiff(previous, next, { timeout: 150 }).map((change) => ({
+				removed: previous.slice(change.fromA, change.toA),
+				added: next.slice(change.fromB, change.toB)
+			})),
+			null,
+			2
+		);
+	}
+
+	async function handleCommit() {
+		if (commitDisabled) return;
+
+		const nextIntent = draftIntent;
+		reconciliationState = 'generating';
+		reconciliationError = '';
+		selectedOutputTab = 'source';
+		schedulePersistence();
+
+		try {
+			const response = await fetch('/api/reconcile', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					previousIntent: committedIntent,
+					nextIntent,
+					intentDiff: formatIntentDiff(committedIntent, nextIntent),
+					currentSource: committedSource
+				})
+			});
+
+			const result = (await response.json()) as ReconcileResponse | { error?: string };
+			if (!response.ok || !('proposedSource' in result)) {
+				throw new Error('error' in result && result.error ? result.error : 'Reconciliation failed.');
+			}
+
+			proposedSource = result.proposedSource;
+			proposalIntent = nextIntent;
+			proposalSummary = result.summary;
+			proposalAssumptions = result.assumptions;
+			reconciliationState = 'reviewing';
+			schedulePersistence();
+		} catch (error) {
+			reconciliationError = error instanceof Error ? error.message : 'Reconciliation failed.';
+			reconciliationState = 'error';
+		}
+	}
+
+	function clearProposal() {
+		proposedSource = null;
+		proposalIntent = null;
+		proposalSummary = '';
+		proposalAssumptions = [];
+	}
+
+	function acceptProposal() {
+		if (proposedSource === null || proposalIntent === null) return;
+
+		committedIntent = proposalIntent;
+		committedSource = proposedSource;
+		clearProposal();
+		reconciliationState = 'idle';
+		schedulePersistence();
+	}
+
+	function rejectProposal() {
+		clearProposal();
+		reconciliationState = 'idle';
+		schedulePersistence();
+	}
+
+	function dismissError() {
+		reconciliationError = '';
+		reconciliationState = 'idle';
 	}
 
 	onMount(() => {
@@ -135,14 +274,27 @@
 				const { default: localforage } = await import('localforage');
 				storage = localforage.createInstance({ name: 'hz', storeName: 'projects' });
 
-				const storedIntent = await storage.getItem<StoredIntent>(STORAGE_KEY);
-				if (storedIntent?.version === 1 && !editedBeforeHydration) {
-					draftIntent = storedIntent.draftIntent;
-					committedIntent = storedIntent.committedIntent;
+				const stored = await storage.getItem<StoredProject | StoredIntentV1>(STORAGE_KEY);
+				if (stored?.version === 2) {
+					committedIntent = stored.committedIntent;
+					committedSource = stored.committedSource;
+					selectedOutputTab = stored.selectedOutputTab;
+
+					if (!editedBeforeHydration) {
+						draftIntent = stored.draftIntent;
+						proposedSource = stored.proposedSource;
+						proposalIntent = stored.proposalIntent;
+						proposalSummary = stored.proposalSummary;
+						proposalAssumptions = stored.proposalAssumptions;
+						reconciliationState = stored.proposedSource ? 'reviewing' : 'idle';
+					}
+				} else if (stored?.version === 1) {
+					committedIntent = stored.committedIntent;
+					if (!editedBeforeHydration) draftIntent = stored.draftIntent;
 				}
 
 				hydrated = true;
-				if (editedBeforeHydration) handleIntentChange(draftIntent);
+				if (editedBeforeHydration) schedulePersistence();
 				else persistenceState = 'saved';
 			} catch {
 				hydrated = true;
@@ -179,25 +331,126 @@
 				<span>{statusLabel}</span>
 			</div>
 
-			<button class="intent-status__commit" type="button" disabled title="Commit workflow coming next">
-				Commit
+			<button
+				class="intent-status__commit"
+				class:intent-status__commit--ready={!commitDisabled}
+				type="button"
+				disabled={commitDisabled}
+				onclick={handleCommit}
+			>
+				{reconciliationState === 'generating' ? 'Reconciling…' : 'Commit'}
 			</button>
 		</footer>
 	</section>
-	<div
+
+	<button
 		class="workspace__divider"
-		role="separator"
+		type="button"
+		role="slider"
 		aria-label="Resize workspace panes"
 		aria-orientation={stacked ? 'horizontal' : 'vertical'}
 		aria-valuemin={MIN_SPLIT}
 		aria-valuemax={MAX_SPLIT}
 		aria-valuenow={Math.round(split)}
-		tabindex="0"
 		onpointerdown={handlePointerDown}
 		onpointermove={handlePointerMove}
 		onpointerup={handlePointerUp}
 		onpointercancel={handlePointerUp}
-		onkeydown={handleKeydown}
-	></div>
-	<section class="workspace__pane workspace__pane--output" aria-label="Output workspace"></section>
+		onkeydown={handleDividerKeydown}
+	></button>
+
+	<section class="workspace__pane workspace__pane--output" aria-label="Output workspace">
+		<header class="output-tabs" role="tablist" aria-label="Output views">
+			<button
+				class:output-tabs__tab--active={selectedOutputTab === 'source'}
+				class="output-tabs__tab"
+				type="button"
+				role="tab"
+				aria-selected={selectedOutputTab === 'source'}
+				aria-controls="source-panel"
+				onclick={() => selectOutputTab('source')}
+			>
+				Source
+			</button>
+			<button
+				class:output-tabs__tab--active={selectedOutputTab === 'repl'}
+				class="output-tabs__tab"
+				type="button"
+				role="tab"
+				aria-selected={selectedOutputTab === 'repl'}
+				aria-controls="repl-panel"
+				onclick={() => selectOutputTab('repl')}
+			>
+				REPL
+			</button>
+			{#if proposedSource !== null}
+				<span class="output-tabs__badge">Review</span>
+			{/if}
+		</header>
+
+		<div
+			id="source-panel"
+			class="output-content"
+			role="tabpanel"
+			aria-label="Generated source"
+			hidden={selectedOutputTab !== 'source'}
+		>
+				{#if reconciliationState === 'generating'}
+					<div class="output-empty output-empty--working">
+						<span class="output-empty__pulse" aria-hidden="true"></span>
+						<span>Reconciling implementation</span>
+					</div>
+				{:else if displayedSource}
+					{#key sourceViewKey}
+						<SourceViewer source={displayedSource} original={proposedSource === null ? null : committedSource} />
+					{/key}
+				{:else}
+					<div class="output-empty">
+						<span>No generated source yet</span>
+						<small>Commit an intent to create the first implementation.</small>
+					</div>
+				{/if}
+		</div>
+
+		<div
+			id="repl-panel"
+			class="output-content"
+			role="tabpanel"
+			aria-label="JavaScript REPL"
+			hidden={selectedOutputTab !== 'repl'}
+		>
+			<Repl source={committedSource} />
+		</div>
+
+		{#if reconciliationState === 'reviewing' && proposedSource !== null}
+			<aside class="proposal-review" aria-label="Proposed implementation review">
+				<div class="proposal-review__copy">
+					<p>{proposalSummary}</p>
+					{#if proposalAssumptions.length > 0}
+						<div class="proposal-review__assumptions">
+							<span>Assumptions</span>
+							<ul>
+								{#each proposalAssumptions as assumption}
+									<li>{assumption}</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+				</div>
+				<div class="proposal-review__actions">
+					<button class="review-button review-button--secondary" type="button" onclick={rejectProposal}>
+						Reject
+					</button>
+					<button class="review-button review-button--primary" type="button" onclick={acceptProposal}>
+						Accept
+					</button>
+				</div>
+			</aside>
+		{:else if reconciliationState === 'error'}
+			<aside class="proposal-error" aria-live="polite">
+				<span>{reconciliationError}</span>
+				<button type="button" onclick={dismissError}>Dismiss</button>
+			</aside>
+		{/if}
+	</section>
 </main>
