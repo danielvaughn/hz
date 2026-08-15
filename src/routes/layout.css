@@ -16,6 +16,9 @@
 	--pane-output: #0a0a09;
 	--seam: rgba(231, 229, 228, 0.1);
 	--seam-active: rgba(231, 229, 228, 0.34);
+	--text-muted: #77746e;
+	--status-clean: #6f8f78;
+	--status-dirty: #b89a66;
 }
 
 html,
@@ -57,6 +60,8 @@ select {
 }
 
 .workspace__pane--intent {
+	display: grid;
+	grid-template-rows: minmax(0, 1fr) auto;
 	background: var(--pane-intent);
 }
 
@@ -104,6 +109,57 @@ select {
 .workspace--resizing * {
 	cursor: col-resize !important;
 	user-select: none !important;
+}
+
+.workspace__editor {
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.intent-status {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 2.75rem;
+	padding: 0 0.625rem 0 0.875rem;
+	border-top: 1px solid var(--seam);
+	background: rgba(10, 10, 9, 0.72);
+	color: var(--text-muted);
+	font-size: 0.6875rem;
+	letter-spacing: 0.025em;
+}
+
+.intent-status__state {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.intent-status__dot {
+	width: 0.375rem;
+	height: 0.375rem;
+	border-radius: 999px;
+	background: var(--status-clean);
+	box-shadow: 0 0 0.5rem rgba(111, 143, 120, 0.2);
+}
+
+.intent-status__state[data-state='dirty'] .intent-status__dot {
+	background: var(--status-dirty);
+	box-shadow: 0 0 0.5rem rgba(184, 154, 102, 0.2);
+}
+
+.intent-status__commit {
+	min-height: 1.875rem;
+	padding: 0 0.75rem;
+	border: 1px solid rgba(231, 229, 228, 0.09);
+	border-radius: 0.25rem;
+	background: rgba(231, 229, 228, 0.035);
+	color: #67645f;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	cursor: not-allowed;
 }
 
 @media (max-width: 48rem) {
