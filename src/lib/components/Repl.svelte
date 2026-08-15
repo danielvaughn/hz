@@ -347,7 +347,7 @@
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr);
 		gap: 0.625rem;
-		color: #8c8881;
+		color: #bdb8b0;
 		font-size: 0.75rem;
 		line-height: 1.6;
 	}
@@ -366,16 +366,16 @@
 	}
 
 	.repl__entry[data-kind='result'] {
-		color: #a7a39c;
+		color: #d6d2cb;
 	}
 
 	.repl__entry[data-kind='error'],
 	.repl__entry[data-level='error'] {
-		color: #b77970;
+		color: #d38b80;
 	}
 
 	.repl__entry[data-level='warn'] {
-		color: #ad9162;
+		color: #d1aa69;
 	}
 
 	.repl__marker,
