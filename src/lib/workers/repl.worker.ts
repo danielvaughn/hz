@@ -122,6 +122,7 @@ async function execute(id: string, code: string) {
 		});
 	} finally {
 		activeRequestId = null;
+		send({ type: 'scope', replKeys: Object.keys(repl).sort() });
 	}
 }
 

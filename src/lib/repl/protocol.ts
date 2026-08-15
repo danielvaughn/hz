@@ -6,6 +6,7 @@ export type ReplWorkerRequest =
 
 export type ReplWorkerResponse =
 	| { type: 'loaded'; exports: string[] }
+	| { type: 'scope'; replKeys: string[] }
 	| { type: 'load-error'; message: string }
 	| { type: 'console'; id: string | null; level: ConsoleLevel; text: string }
 	| { type: 'result'; id: string; text: string }

@@ -25,6 +25,8 @@
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
+		"@codemirror/autocomplete": "^6.20.3",
+		"@codemirror/commands": "^6.10.4",
 		"@codemirror/lang-javascript": "^6.2.5",
 		"@codemirror/merge": "^6.12.2",
 		"@codemirror/theme-one-dark": "^6.1.3",

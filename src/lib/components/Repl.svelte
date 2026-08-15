@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ReplInput from '$lib/components/ReplInput.svelte';
 	import type { ConsoleLevel, ReplWorkerRequest, ReplWorkerResponse } from '$lib/repl/protocol';
 	import { LoaderCircle, Play, RotateCcw, Square } from '@lucide/svelte';
 	import { onMount, tick } from 'svelte';
@@ -24,11 +25,13 @@
 	let loadedSource = '';
 	let mounted = false;
 	let output: HTMLDivElement;
-	let commandInput: HTMLInputElement;
+	let commandInput: { focus: () => void };
 	let entries = $state<Entry[]>([]);
 	let command = $state('');
 	let history = $state<string[]>([]);
 	let historyIndex = $state(0);
+	let programExports = $state<string[]>([]);
+	let replKeys = $state<string[]>([]);
 	let ready = $state(false);
 	let busy = $state(false);
 	let loading = $state(false);
@@ -62,6 +65,11 @@
 				loadTimer = undefined;
 				loading = false;
 				ready = true;
+				programExports = message.exports;
+				void tick().then(() => commandInput?.focus());
+				break;
+			case 'scope':
+				replKeys = message.replKeys;
 				break;
 			case 'load-error':
 				if (loadTimer) clearTimeout(loadTimer);
@@ -95,6 +103,8 @@
 		loading = false;
 		ready = false;
 		entries = [];
+		programExports = [];
+		replKeys = [];
 
 		if (!nextSource.trim()) return;
 
@@ -159,38 +169,17 @@
 		}, EXECUTION_TIMEOUT);
 	}
 
-	function handleKeydown(event: KeyboardEvent) {
-		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-			event.preventDefault();
-			entries = [];
-			return;
-		}
+	function navigateHistory(direction: -1 | 1) {
+		if (history.length === 0) return;
 
-		if (command === '' && source.trim() && (event.key === 'Tab' || event.key === 'ArrowRight')) {
-			event.preventDefault();
-			command = DEFAULT_COMMAND;
-			void tick().then(() => commandInput?.setSelectionRange(DEFAULT_COMMAND.length, DEFAULT_COMMAND.length));
-			return;
-		}
-
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			execute();
-			return;
-		}
-
-		if (event.key === 'ArrowUp' && history.length > 0) {
-			event.preventDefault();
+		if (direction === -1) {
 			historyIndex = Math.max(0, historyIndex - 1);
 			command = history[historyIndex] ?? '';
 			return;
 		}
 
-		if (event.key === 'ArrowDown' && history.length > 0) {
-			event.preventDefault();
-			historyIndex = Math.min(history.length, historyIndex + 1);
-			command = historyIndex === history.length ? '' : (history[historyIndex] ?? '');
-		}
+		historyIndex = Math.min(history.length, historyIndex + 1);
+		command = historyIndex === history.length ? '' : (history[historyIndex] ?? '');
 	}
 
 	onMount(() => {
@@ -260,20 +249,22 @@
 		{/each}
 	</div>
 
-	<form class="repl__input" onsubmit={(event) => { event.preventDefault(); execute(); }}>
+	<div class="repl__input">
 		<span aria-hidden="true">›</span>
-		<input
+		<ReplInput
 			bind:this={commandInput}
-			bind:value={command}
-			type="text"
-			aria-label="JavaScript expression"
+			value={command}
 			placeholder={source.trim() ? DEFAULT_COMMAND : 'Commit a program to begin'}
 			disabled={!ready || busy}
-			autocomplete="off"
-			spellcheck="false"
-			onkeydown={handleKeydown}
+			defaultValue={source.trim() ? DEFAULT_COMMAND : ''}
+			{programExports}
+			{replKeys}
+			onchange={(value) => (command = value)}
+			onsubmit={execute}
+			onclear={() => (entries = [])}
+			onhistory={navigateHistory}
 		/>
-	</form>
+	</div>
 </div>
 
 <style>
@@ -322,12 +313,6 @@
 	.repl__toolbar button:focus-visible {
 		outline: 1px solid rgba(231, 229, 228, 0.52);
 		outline-offset: 2px;
-	}
-
-	.repl__input input:focus,
-	.repl__input input:focus-visible {
-		outline: none;
-		box-shadow: none;
 	}
 
 	.repl__spinner {
@@ -393,25 +378,6 @@
 		border-top: 1px solid rgba(231, 229, 228, 0.075);
 		background: #0b0b0a;
 		font-size: 0.8125rem;
-	}
-
-	.repl__input input {
-		width: 100%;
-		padding: 0;
-		border: 0;
-		background: transparent;
-		color: #cbc7c0;
-		box-shadow: none;
-		outline: none;
-	}
-
-	.repl__input input:disabled {
-		color: #4d4a46;
-		cursor: not-allowed;
-	}
-
-	.repl__input input::placeholder {
-		color: #413f3b;
 	}
 
 	@keyframes repl-spin {
