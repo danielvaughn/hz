@@ -10,6 +10,14 @@
 	const KEYBOARD_STEP = 2;
 	const STORAGE_KEY = 'project:default';
 	const SAVE_DELAY = 120;
+	const SYNCHRONIZATION_LIMIT = 92;
+	const SYNCHRONIZATION_TIME_CONSTANT = 8_000;
+	const SYNCHRONIZATION_FRAME_INTERVAL = 80;
+	const SYNCHRONIZATION_FINISH_DURATION = 280;
+	const MIN_REVIEW_HEIGHT = 144;
+	const MIN_SOURCE_HEIGHT = 112;
+	const OUTPUT_HEADER_HEIGHT = 44;
+	const REVIEW_KEYBOARD_STEP = 16;
 
 	type OutputTab = 'source' | 'repl';
 	type PersistenceState = 'loading' | 'saved' | 'saving' | 'error';
@@ -52,8 +60,12 @@
 	};
 
 	let workspace: HTMLElement;
+	let outputPane: HTMLElement;
+	let reviewPanel: HTMLElement;
 	let split = $state(50);
 	let resizing = $state(false);
+	let reviewResizing = $state(false);
+	let reviewHeight = $state<number | null>(null);
 	let stacked = $state(false);
 	let draftIntent = $state('');
 	let committedIntent = $state('');
@@ -67,11 +79,16 @@
 	let persistenceState = $state<PersistenceState>('loading');
 	let reconciliationState = $state<ReconciliationState>('idle');
 	let reconciliationError = $state('');
+	let synchronizationProgress = $state(0);
+	let synchronizationFinishing = $state(false);
 	let storage: LocalForage | undefined;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	let synchronizationFrame: number | undefined;
 	let saveRevision = 0;
 	let hydrated = false;
 	let editedBeforeHydration = false;
+	let reviewResizeStartY = 0;
+	let reviewResizeStartHeight = 0;
 
 	let dirty = $derived(draftIntent !== committedIntent);
 	let commitDisabled = $derived(
@@ -138,6 +155,60 @@
 
 		event.preventDefault();
 		split = clamp(nextSplit);
+	}
+
+	function maximumReviewHeight() {
+		return Math.max(
+			MIN_REVIEW_HEIGHT,
+			outputPane.getBoundingClientRect().height - OUTPUT_HEADER_HEIGHT - MIN_SOURCE_HEIGHT
+		);
+	}
+
+	function setReviewHeight(value: number) {
+		reviewHeight = Math.min(maximumReviewHeight(), Math.max(MIN_REVIEW_HEIGHT, value));
+	}
+
+	function handleReviewResizeStart(event: PointerEvent) {
+		reviewResizing = true;
+		reviewResizeStartY = event.clientY;
+		reviewResizeStartHeight = reviewPanel.getBoundingClientRect().height;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		setReviewHeight(reviewResizeStartHeight);
+	}
+
+	function handleReviewResizeMove(event: PointerEvent) {
+		if (!reviewResizing) return;
+		setReviewHeight(reviewResizeStartHeight + reviewResizeStartY - event.clientY);
+	}
+
+	function handleReviewResizeEnd(event: PointerEvent) {
+		reviewResizing = false;
+
+		const handle = event.currentTarget as HTMLElement;
+		if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+	}
+
+	function handleReviewResizeKeydown(event: KeyboardEvent) {
+		const currentHeight = reviewHeight ?? reviewPanel.getBoundingClientRect().height;
+
+		switch (event.key) {
+			case 'ArrowUp':
+				setReviewHeight(currentHeight + REVIEW_KEYBOARD_STEP);
+				break;
+			case 'ArrowDown':
+				setReviewHeight(currentHeight - REVIEW_KEYBOARD_STEP);
+				break;
+			case 'Home':
+				setReviewHeight(MIN_REVIEW_HEIGHT);
+				break;
+			case 'End':
+				setReviewHeight(maximumReviewHeight());
+				break;
+			default:
+				return;
+		}
+
+		event.preventDefault();
 	}
 
 	function getProjectSnapshot(): StoredProject {
@@ -217,6 +288,54 @@
 		);
 	}
 
+	function prefersReducedMotion() {
+		return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	}
+
+	function stopSynchronizationProgress() {
+		if (synchronizationFrame !== undefined) cancelAnimationFrame(synchronizationFrame);
+		synchronizationFrame = undefined;
+	}
+
+	function startSynchronizationProgress() {
+		stopSynchronizationProgress();
+		synchronizationFinishing = false;
+		synchronizationProgress = prefersReducedMotion() ? 68 : 6;
+
+		if (prefersReducedMotion()) return;
+
+		const startedAt = performance.now();
+		let lastUpdate = startedAt;
+
+		const advance = (now: number) => {
+			if (now - lastUpdate >= SYNCHRONIZATION_FRAME_INTERVAL) {
+				const elapsed = now - startedAt;
+				const range = SYNCHRONIZATION_LIMIT - 6;
+				synchronizationProgress = Math.min(
+					SYNCHRONIZATION_LIMIT,
+					6 + range * (1 - Math.exp(-elapsed / SYNCHRONIZATION_TIME_CONSTANT))
+				);
+				lastUpdate = now;
+			}
+
+			synchronizationFrame = requestAnimationFrame(advance);
+		};
+
+		synchronizationFrame = requestAnimationFrame(advance);
+	}
+
+	async function finishSynchronizationProgress() {
+		stopSynchronizationProgress();
+		synchronizationFinishing = true;
+		synchronizationProgress = 100;
+
+		await new Promise((resolve) =>
+			setTimeout(resolve, prefersReducedMotion() ? 40 : SYNCHRONIZATION_FINISH_DURATION)
+		);
+
+		synchronizationFinishing = false;
+	}
+
 	async function handleCommit() {
 		if (commitDisabled) return;
 
@@ -224,6 +343,7 @@
 		reconciliationState = 'generating';
 		reconciliationError = '';
 		selectedOutputTab = 'source';
+		startSynchronizationProgress();
 		schedulePersistence();
 
 		try {
@@ -243,6 +363,7 @@
 				throw new Error('error' in result && result.error ? result.error : 'Reconciliation failed.');
 			}
 
+			await finishSynchronizationProgress();
 			proposedSource = result.proposedSource;
 			proposalIntent = nextIntent;
 			proposalSummary = result.summary;
@@ -250,6 +371,7 @@
 			reconciliationState = 'reviewing';
 			schedulePersistence();
 		} catch (error) {
+			stopSynchronizationProgress();
 			reconciliationError = error instanceof Error ? error.message : 'Reconciliation failed.';
 			reconciliationState = 'error';
 		}
@@ -360,6 +482,7 @@
 			mediaQuery.removeEventListener('change', updateOrientation);
 			window.removeEventListener('keydown', handleSaveShortcut);
 			if (saveTimer) clearTimeout(saveTimer);
+			stopSynchronizationProgress();
 		};
 	});
 </script>
@@ -371,6 +494,7 @@
 <main
 	bind:this={workspace}
 	class:workspace--resizing={resizing}
+	class:workspace--review-resizing={reviewResizing}
 	class="workspace"
 	style={`--split: ${split}%`}
 	aria-label="hz workspace"
@@ -404,13 +528,15 @@
 		onkeydown={handleDividerKeydown}
 	></button>
 
-	<section class="workspace__pane workspace__pane--output" aria-label="Output workspace">
+	<section bind:this={outputPane} class="workspace__pane workspace__pane--output" aria-label="Output workspace">
 		<header class="output-tabs" role="tablist" aria-label="Output views">
 			<button
 				class:output-tabs__tab--active={selectedOutputTab === 'source'}
+				class:output-tabs__tab--review={proposedSource !== null}
 				class="output-tabs__tab"
 				type="button"
 				role="tab"
+				aria-label={proposedSource !== null ? 'Source, changes to review' : 'Source'}
 				aria-selected={selectedOutputTab === 'source'}
 				aria-controls="source-panel"
 				onclick={() => selectOutputTab('source')}
@@ -428,9 +554,6 @@
 			>
 				REPL
 			</button>
-			{#if proposedSource !== null}
-				<span class="output-tabs__badge">Review</span>
-			{/if}
 		</header>
 
 		<div
@@ -441,9 +564,19 @@
 			hidden={selectedOutputTab !== 'source'}
 		>
 				{#if reconciliationState === 'generating'}
-					<div class="output-empty output-empty--working">
-						<span class="output-empty__pulse" aria-hidden="true"></span>
-						<span>Reconciling implementation</span>
+					<div class="synchronization" role="status" aria-live="polite" aria-busy="true">
+						<div
+							class="synchronization__track"
+							role="progressbar"
+							aria-label="Synchronization in progress"
+						>
+							<span
+								class:synchronization__fill--finishing={synchronizationFinishing}
+								class="synchronization__fill"
+								style={`width: ${synchronizationProgress}%`}
+							></span>
+						</div>
+						<span class="synchronization__label">SYNCHRONIZING</span>
 					</div>
 				{:else if displayedSource}
 					{#key sourceViewKey}
@@ -468,7 +601,28 @@
 		</div>
 
 		{#if reconciliationState === 'reviewing' && proposedSource !== null}
-			<aside class="proposal-review" aria-label="Proposed implementation review">
+			<aside
+				bind:this={reviewPanel}
+				class:proposal-review--sized={reviewHeight !== null}
+				class="proposal-review"
+				style:height={reviewHeight === null ? undefined : `${reviewHeight}px`}
+				aria-label="Proposed implementation review"
+			>
+				<button
+					class="proposal-review__resize"
+					type="button"
+					role="separator"
+					aria-label="Resize review details"
+					aria-orientation="horizontal"
+					aria-valuemin={MIN_REVIEW_HEIGHT}
+					aria-valuemax={outputPane ? Math.round(maximumReviewHeight()) : undefined}
+					aria-valuenow={reviewHeight === null ? undefined : Math.round(reviewHeight)}
+					onpointerdown={handleReviewResizeStart}
+					onpointermove={handleReviewResizeMove}
+					onpointerup={handleReviewResizeEnd}
+					onpointercancel={handleReviewResizeEnd}
+					onkeydown={handleReviewResizeKeydown}
+				></button>
 				<div class="proposal-review__copy">
 					<p>{proposalSummary}</p>
 					{#if proposalAssumptions.length > 0}
