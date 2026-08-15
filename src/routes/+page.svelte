@@ -86,6 +86,7 @@
 	let intentHighlighting = $state<PersistedHighlighting | null | undefined>(undefined);
 	let selectedOutputTab = $state<OutputTab>('source');
 	let persistenceState = $state<PersistenceState>('loading');
+	let clearingSavedData = $state(false);
 	let reconciliationState = $state<ReconciliationState>('idle');
 	let reconciliationError = $state('');
 	let synchronizationProgress = $state(0);
@@ -314,6 +315,28 @@
 		if (selectedOutputTab === tab) return;
 		selectedOutputTab = tab;
 		schedulePersistence();
+	}
+
+	async function clearSavedData() {
+		if (!storage || clearingSavedData) return;
+		if (!window.confirm('Clear all saved hz data? This cannot be undone.')) return;
+
+		clearingSavedData = true;
+		persistenceState = 'saving';
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = undefined;
+		pendingSave = undefined;
+		saveRevision += 1;
+
+		try {
+			await persistenceWriteChain;
+			await storage.clear();
+			window.location.reload();
+		} catch (error) {
+			console.error('Could not clear saved hz data.', error);
+			clearingSavedData = false;
+			persistenceState = 'error';
+		}
 	}
 
 	function countChangedLines(text: string) {
@@ -610,7 +633,17 @@
 					<span class="intent-status__removals">−{intentChanges.removals}</span>
 				</div>
 			</div>
-			<span class="intent-status__shortcut"><kbd>⌘S</kbd> to save</span>
+			<div class="intent-status__actions">
+				<button
+					class="intent-status__clear"
+					type="button"
+					disabled={clearingSavedData || persistenceState === 'loading'}
+					onclick={clearSavedData}
+				>
+					{clearingSavedData ? 'Clearing…' : 'Clear data'}
+				</button>
+				<span class="intent-status__shortcut"><kbd>⌘S</kbd> to save</span>
+			</div>
 		</footer>
 	</section>
 

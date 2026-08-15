@@ -163,6 +163,37 @@ select {
 	color: #55524d;
 }
 
+.intent-status__actions {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+
+.intent-status__clear {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: #6f6b65;
+	font-size: inherit;
+	letter-spacing: inherit;
+	cursor: pointer;
+}
+
+.intent-status__clear:hover,
+.intent-status__clear:focus-visible {
+	color: #b77970;
+}
+
+.intent-status__clear:focus-visible {
+	outline: 1px solid rgba(183, 121, 112, 0.55);
+	outline-offset: 0.25rem;
+}
+
+.intent-status__clear:disabled {
+	color: #494641;
+	cursor: default;
+}
+
 .intent-status__shortcut kbd {
 	font-family: inherit;
 	color: #77746e;
