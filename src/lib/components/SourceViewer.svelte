@@ -70,11 +70,10 @@
 					? []
 					: unifiedMergeView({
 							original,
-							highlightChanges: true,
+							highlightChanges: false,
 							gutter: true,
 							mergeControls: false,
-							allowInlineDiffs: true,
-							collapseUnchanged: { margin: 3, minSize: 6 }
+							allowInlineDiffs: true
 						}))
 			]
 		});
