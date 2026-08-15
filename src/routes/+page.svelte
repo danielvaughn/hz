@@ -2,6 +2,7 @@
 	import IntentEditor from '$lib/components/IntentEditor.svelte';
 	import Repl from '$lib/components/Repl.svelte';
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
+	import type { PersistedHighlighting } from '$lib/highlighting';
 	import { presentableDiff } from '@codemirror/merge';
 	import { Tooltip } from 'bits-ui';
 	import { onMount } from 'svelte';
@@ -49,9 +50,14 @@
 		selectedOutputTab: OutputTab;
 	};
 
-	type StoredProject = Omit<StoredProjectV2, 'version'> & {
+	type StoredProjectV3 = Omit<StoredProjectV2, 'version'> & {
 		version: 3;
 		commits: CommitRecord[];
+	};
+
+	type StoredProject = Omit<StoredProjectV3, 'version'> & {
+		version: 4;
+		highlighting: PersistedHighlighting | null;
 	};
 
 	type ReconcileResponse = {
@@ -76,6 +82,7 @@
 	let proposalSummary = $state('');
 	let proposalAssumptions = $state<string[]>([]);
 	let commits = $state<CommitRecord[]>([]);
+	let intentHighlighting = $state<PersistedHighlighting | null | undefined>(undefined);
 	let selectedOutputTab = $state<OutputTab>('source');
 	let persistenceState = $state<PersistenceState>('loading');
 	let reconciliationState = $state<ReconciliationState>('idle');
@@ -224,7 +231,7 @@
 
 	function getProjectSnapshot(): StoredProject {
 		return {
-			version: 3,
+			version: 4,
 			draftIntent,
 			committedIntent,
 			committedSource,
@@ -233,6 +240,7 @@
 			proposalSummary,
 			proposalAssumptions: [...proposalAssumptions],
 			commits: commits.map((commit) => ({ ...commit })),
+			highlighting: intentHighlighting ?? null,
 			selectedOutputTab
 		};
 	}
@@ -264,6 +272,11 @@
 		}
 
 		schedulePersistence();
+	}
+
+	function handleHighlightingChange(highlighting: PersistedHighlighting) {
+		intentHighlighting = highlighting;
+		if (hydrated) schedulePersistence();
 	}
 
 	function selectOutputTab(tab: OutputTab) {
@@ -445,10 +458,10 @@
 				const { default: localforage } = await import('localforage');
 				storage = localforage.createInstance({ name: 'hz', storeName: 'projects' });
 
-				const stored = await storage.getItem<StoredProject | StoredProjectV2 | StoredIntentV1>(
-					STORAGE_KEY
-				);
-				if (stored?.version === 3) {
+				const stored = await storage.getItem<
+					StoredProject | StoredProjectV3 | StoredProjectV2 | StoredIntentV1
+				>(STORAGE_KEY);
+				if (stored?.version === 4) {
 					committedIntent = stored.committedIntent;
 					committedSource = stored.committedSource;
 					commits = stored.commits;
@@ -456,6 +469,22 @@
 
 					if (!editedBeforeHydration) {
 						draftIntent = stored.draftIntent;
+						intentHighlighting = stored.highlighting;
+						proposedSource = stored.proposedSource;
+						proposalIntent = stored.proposalIntent;
+						proposalSummary = stored.proposalSummary;
+						proposalAssumptions = stored.proposalAssumptions;
+						reconciliationState = stored.proposedSource ? 'reviewing' : 'idle';
+					}
+				} else if (stored?.version === 3) {
+					committedIntent = stored.committedIntent;
+					committedSource = stored.committedSource;
+					commits = stored.commits;
+					selectedOutputTab = stored.selectedOutputTab;
+
+					if (!editedBeforeHydration) {
+						draftIntent = stored.draftIntent;
+						intentHighlighting = null;
 						proposedSource = stored.proposedSource;
 						proposalIntent = stored.proposalIntent;
 						proposalSummary = stored.proposalSummary;
@@ -469,6 +498,7 @@
 
 					if (!editedBeforeHydration) {
 						draftIntent = stored.draftIntent;
+						intentHighlighting = null;
 						proposedSource = stored.proposedSource;
 						proposalIntent = stored.proposalIntent;
 						proposalSummary = stored.proposalSummary;
@@ -477,7 +507,12 @@
 					}
 				} else if (stored?.version === 1) {
 					committedIntent = stored.committedIntent;
-					if (!editedBeforeHydration) draftIntent = stored.draftIntent;
+					if (!editedBeforeHydration) {
+						draftIntent = stored.draftIntent;
+						intentHighlighting = null;
+					}
+				} else if (!editedBeforeHydration) {
+					intentHighlighting = null;
 				}
 
 				hydrated = true;
@@ -512,7 +547,12 @@
 >
 	<section class="workspace__pane workspace__pane--intent" aria-label="Intent workspace">
 		<div class="workspace__editor">
-			<IntentEditor value={draftIntent} onchange={handleIntentChange} />
+			<IntentEditor
+				value={draftIntent}
+				highlighting={intentHighlighting}
+				onchange={handleIntentChange}
+				onhighlightingchange={handleHighlightingChange}
+			/>
 		</div>
 
 		<footer class="intent-status">
