@@ -466,16 +466,12 @@ select {
 	gap: 0.25rem;
 	max-height: min(20rem, 48vh);
 	margin-top: 1rem;
-	padding: 0.25rem;
-	border: 1px solid rgba(231, 229, 228, 0.09);
-	border-radius: 0.375rem;
-	background: #0d0d0c;
 	overflow-y: auto;
 }
 
 .file-picker__item {
 	display: grid;
-	grid-template-columns: auto minmax(0, 1fr) auto;
+	grid-template-columns: auto minmax(0, 1fr);
 	align-items: center;
 	gap: 0.625rem;
 	min-height: 2.5rem;
@@ -496,22 +492,11 @@ select {
 	white-space: nowrap;
 }
 
-.file-picker__item small {
-	color: #5f5b55;
-	font-family: var(--font-sans);
-	font-size: 0.625rem;
-}
-
 .file-picker__item:hover:not(:disabled),
 .file-picker__item:focus-visible {
 	outline: none;
 	background: rgba(231, 229, 228, 0.07);
 	color: #e7e5e4;
-}
-
-.file-picker__item--active {
-	color: #77736d;
-	cursor: default;
 }
 
 .file-dialog__title {

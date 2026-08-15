@@ -309,6 +309,30 @@
 		};
 	}
 
+	function cloneProject(project: StoredProject): StoredProject {
+		return {
+			version: 4,
+			draftIntent: project.draftIntent,
+			committedIntent: project.committedIntent,
+			committedSource: project.committedSource,
+			proposedSource: project.proposedSource,
+			proposalIntent: project.proposalIntent,
+			proposalSummary: project.proposalSummary,
+			proposalAssumptions: [...project.proposalAssumptions],
+			commits: project.commits.map((commit) => ({ ...commit })),
+			highlighting: project.highlighting
+				? {
+						version: project.highlighting.version,
+						taxonomyVersion: project.highlighting.taxonomyVersion,
+						sourceText: project.highlighting.sourceText,
+						marks: project.highlighting.marks.map((mark) => ({ ...mark })),
+						dirtyRanges: project.highlighting.dirtyRanges.map((range) => ({ ...range }))
+					}
+				: null,
+			selectedOutputTab: project.selectedOutputTab
+		};
+	}
+
 	function applyProject(project: StoredProject) {
 		draftIntent = project.draftIntent;
 		committedIntent = project.committedIntent;
@@ -331,9 +355,13 @@
 		return {
 			version: 1,
 			activeFileId: activeId,
-			files: files.map((file) =>
-				file.id === activeFileId ? { ...file, updatedAt: timestamp, project } : file
-			)
+			files: files.map((file) => ({
+				id: file.id,
+				name: file.name,
+				createdAt: file.createdAt,
+				updatedAt: file.id === activeFileId ? timestamp : file.updatedAt,
+				project: cloneProject(file.id === activeFileId ? project : file.project)
+			}))
 		};
 	}
 
@@ -536,7 +564,11 @@
 	}
 
 	async function switchFile(fileId: string) {
-		if (fileOperationDisabled || fileId === activeFileId) return;
+		if (fileOperationDisabled) return;
+		if (fileId === activeFileId) {
+			openFileDialogOpen = false;
+			return;
+		}
 
 		const captured = getWorkspaceSnapshot(fileId);
 		const target = captured.files.find((file) => file.id === fileId);
@@ -1276,15 +1308,13 @@
 			<div class="file-picker" role="list">
 				{#each files as file (file.id)}
 					<button
-						class:file-picker__item--active={file.id === activeFileId}
 						class="file-picker__item"
 						type="button"
-						disabled={fileOperationDisabled || file.id === activeFileId}
+						disabled={fileOperationDisabled}
 						onclick={() => switchFile(file.id)}
 					>
 						<FileText size={14} strokeWidth={1.6} aria-hidden="true" />
 						<span>{file.name}</span>
-						{#if file.id === activeFileId}<small>Current</small>{/if}
 					</button>
 				{/each}
 			</div>
