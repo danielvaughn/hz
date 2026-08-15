@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { basicSetup, EditorView } from 'codemirror';
 	import { indentWithTab } from '@codemirror/commands';
-	import { ChangeDesc, StateEffect, StateField, type Range, type Text } from '@codemirror/state';
+	import { indentUnit } from '@codemirror/language';
+	import {
+		ChangeDesc,
+		EditorState,
+		StateEffect,
+		StateField,
+		type Range,
+		type Text
+	} from '@codemirror/state';
 	import { Decoration, keymap, type DecorationSet } from '@codemirror/view';
 	import { onMount } from 'svelte';
 
@@ -20,10 +28,8 @@
 		value: string;
 		highlighting?: PersistedHighlighting | null;
 		onchange: (value: string) => void;
-		onhighlightingchange: (highlighting: PersistedHighlighting) => void;
+		onhighlightingchange: (highlighting: PersistedHighlighting, persistImmediately?: boolean) => void;
 	};
-
-	const HIGHLIGHT_DELAY = 800;
 
 	let { value, highlighting, onchange, onhighlightingchange }: Props = $props();
 	let host: HTMLDivElement;
@@ -31,7 +37,6 @@
 	let applyingExternalValue = false;
 	let initializedHighlighting = false;
 	let dirtyRanges: HighlightRange[] = [];
-	let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 	let highlightRequest: AbortController | undefined;
 
 	const restoreHighlights = StateEffect.define<HighlightMark[]>();
@@ -217,22 +222,14 @@
 		};
 	}
 
-	function publishHighlighting() {
+	function publishHighlighting(persistImmediately = false) {
 		const snapshot = serializeHighlighting();
-		if (snapshot) onhighlightingchange(snapshot);
+		if (snapshot) onhighlightingchange(snapshot, persistImmediately);
 	}
 
 	function stopPendingHighlight() {
-		if (highlightTimer) clearTimeout(highlightTimer);
-		highlightTimer = undefined;
 		highlightRequest?.abort();
 		highlightRequest = undefined;
-	}
-
-	function scheduleHighlight() {
-		if (!view || dirtyRanges.length === 0 || view.state.doc.length === 0) return;
-		if (highlightTimer) clearTimeout(highlightTimer);
-		highlightTimer = setTimeout(() => void runHighlight(), HIGHLIGHT_DELAY);
 	}
 
 	async function runHighlight() {
@@ -242,7 +239,6 @@
 		const requestedRanges = dirtyRanges.map((range) => ({ ...range }));
 		const controller = new AbortController();
 		highlightRequest = controller;
-		highlightTimer = undefined;
 
 		try {
 			const response = await fetch('/api/highlight', {
@@ -261,7 +257,7 @@
 			);
 			view.dispatch({ effects: replaceHighlights.of({ ranges: requestedRanges, marks }) });
 			dirtyRanges = [];
-			publishHighlighting();
+			publishHighlighting(true);
 		} catch (error) {
 			if (!(error instanceof DOMException && error.name === 'AbortError')) {
 				// Keep dirty ranges persisted so a later edit or reload can retry them.
@@ -272,12 +268,29 @@
 		}
 	}
 
+	export async function generateHighlighting(forceFullDocument = false) {
+		if (!view || view.state.doc.length === 0) return;
+		stopPendingHighlight();
+
+		if (forceFullDocument) {
+			dirtyRanges = [{ from: 0, to: view.state.doc.length }];
+			view.dispatch({
+				effects: replaceHighlights.of({ ranges: dirtyRanges, marks: [] })
+			});
+			publishHighlighting();
+		}
+
+		await runHighlight();
+	}
+
 	onMount(() => {
 		view = new EditorView({
 			doc: value,
 			parent: host,
 			extensions: [
 				basicSetup,
+				indentUnit.of('    '),
+				EditorState.tabSize.of(4),
 				keymap.of([indentWithTab]),
 				EditorView.lineWrapping,
 				EditorView.contentAttributes.of({ 'aria-label': 'Intent editor' }),
@@ -290,7 +303,6 @@
 					stopPendingHighlight();
 					onchange(update.state.doc.toString());
 					publishHighlighting();
-					scheduleHighlight();
 				})
 			]
 		});
@@ -337,7 +349,6 @@
 
 		view.dispatch({ effects: restoreHighlights.of(allMarksValid ? restoredMarks : []) });
 		publishHighlighting();
-		scheduleHighlight();
 	});
 </script>
 

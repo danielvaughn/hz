@@ -181,17 +181,106 @@ select {
 
 .intent-status__clear:hover,
 .intent-status__clear:focus-visible {
-	color: #b77970;
+	color: #ef3333;
 }
 
 .intent-status__clear:focus-visible {
-	outline: 1px solid rgba(183, 121, 112, 0.55);
+	outline: 1px solid rgba(239, 51, 51, 0.65);
 	outline-offset: 0.25rem;
 }
 
 .intent-status__clear:disabled {
 	color: #494641;
 	cursor: default;
+}
+
+.intent-status__clear kbd {
+	margin-left: 0.25rem;
+	font-family: inherit;
+	color: #55524d;
+}
+
+.clear-dialog__overlay {
+	position: fixed;
+	z-index: 20;
+	inset: 0;
+	background: rgba(3, 3, 3, 0.7);
+	backdrop-filter: blur(3px);
+}
+
+.clear-dialog__content {
+	position: fixed;
+	z-index: 21;
+	top: 50%;
+	left: 50%;
+	width: min(calc(100vw - 2rem), 27rem);
+	padding: 1.5rem;
+	border: 1px solid rgba(231, 229, 228, 0.14);
+	border-radius: 0.5rem;
+	background: #11110f;
+	box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.48);
+	transform: translate(-50%, -50%);
+}
+
+.clear-dialog__content:focus {
+	outline: none;
+}
+
+.clear-dialog__title {
+	margin: 0;
+	color: #e7e5e4;
+	font-size: 0.9375rem;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+.clear-dialog__description {
+	margin: 0.75rem 0 0;
+	color: #8b8780;
+	font-size: 0.8125rem;
+	line-height: 1.6;
+}
+
+.clear-dialog__actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.625rem;
+	margin-top: 1.5rem;
+}
+
+.clear-dialog__button {
+	min-height: 2.125rem;
+	padding: 0.375rem 0.75rem;
+	border: 1px solid transparent;
+	border-radius: 0.3125rem;
+	font-size: 0.75rem;
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.clear-dialog__button:focus-visible {
+	outline: 2px solid rgba(231, 229, 228, 0.5);
+	outline-offset: 2px;
+}
+
+.clear-dialog__button--cancel {
+	border-color: rgba(231, 229, 228, 0.12);
+	background: #181816;
+	color: #aaa69f;
+}
+
+.clear-dialog__button--cancel:hover {
+	background: #1e1e1b;
+	color: #d6d3d1;
+}
+
+.clear-dialog__button--danger {
+	background: #e02020;
+	color: #fff;
+}
+
+.clear-dialog__button--danger:hover {
+	background: #f02b2b;
 }
 
 .intent-status__shortcut kbd {

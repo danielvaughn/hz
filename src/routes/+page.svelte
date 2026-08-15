@@ -4,7 +4,7 @@
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import type { PersistedHighlighting } from '$lib/highlighting';
 	import { presentableDiff } from '@codemirror/merge';
-	import { Tooltip } from 'bits-ui';
+	import { AlertDialog, Tooltip } from 'bits-ui';
 	import { onMount } from 'svelte';
 
 	const MIN_SPLIT = 20;
@@ -25,6 +25,9 @@
 	type PersistenceState = 'loading' | 'saved' | 'saving' | 'error';
 	type PersistenceTiming = 'debounced' | 'immediate';
 	type ReconciliationState = 'idle' | 'generating' | 'reviewing' | 'error';
+	type IntentEditorHandle = {
+		generateHighlighting: (forceFullDocument?: boolean) => Promise<void>;
+	};
 
 	type StoredIntentV1 = {
 		version: 1;
@@ -70,6 +73,7 @@
 	let workspace: HTMLElement;
 	let outputPane: HTMLElement;
 	let reviewPanel: HTMLElement;
+	let intentEditor: IntentEditorHandle | undefined;
 	let split = $state(50);
 	let resizing = $state(false);
 	let reviewResizing = $state(false);
@@ -87,6 +91,7 @@
 	let selectedOutputTab = $state<OutputTab>('source');
 	let persistenceState = $state<PersistenceState>('loading');
 	let clearingSavedData = $state(false);
+	let clearDataDialogOpen = $state(false);
 	let reconciliationState = $state<ReconciliationState>('idle');
 	let reconciliationError = $state('');
 	let synchronizationProgress = $state(0);
@@ -306,9 +311,12 @@
 		schedulePersistence();
 	}
 
-	function handleHighlightingChange(highlighting: PersistedHighlighting) {
+	function handleHighlightingChange(
+		highlighting: PersistedHighlighting,
+		persistImmediately = false
+	) {
 		intentHighlighting = highlighting;
-		if (hydrated) schedulePersistence();
+		if (hydrated) schedulePersistence(persistImmediately ? 'immediate' : 'debounced');
 	}
 
 	function selectOutputTab(tab: OutputTab) {
@@ -317,10 +325,13 @@
 		schedulePersistence();
 	}
 
+	function requestClearSavedData() {
+		if (!storage || clearingSavedData) return;
+		clearDataDialogOpen = true;
+	}
+
 	async function clearSavedData() {
 		if (!storage || clearingSavedData) return;
-		if (!window.confirm('Clear all saved hz data? This cannot be undone.')) return;
-
 		clearingSavedData = true;
 		persistenceState = 'saving';
 		if (saveTimer) clearTimeout(saveTimer);
@@ -423,6 +434,7 @@
 		selectedOutputTab = 'source';
 		startSynchronizationProgress();
 		schedulePersistence();
+		const highlightingPromise = intentEditor?.generateHighlighting() ?? Promise.resolve();
 
 		try {
 			const response = await fetch('/api/reconcile', {
@@ -441,6 +453,7 @@
 				throw new Error('error' in result && result.error ? result.error : 'Reconciliation failed.');
 			}
 
+			await highlightingPromise;
 			await finishSynchronizationProgress();
 			proposedSource = result.proposedSource;
 			proposalIntent = nextIntent;
@@ -492,8 +505,22 @@
 		reconciliationState = 'idle';
 	}
 
-	function handleSaveShortcut(event: KeyboardEvent) {
-		if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+	function handleWorkspaceShortcut(event: KeyboardEvent) {
+		if (!(event.metaKey || event.ctrlKey)) return;
+
+		if (event.shiftKey && event.key === 'Backspace') {
+			event.preventDefault();
+			requestClearSavedData();
+			return;
+		}
+
+		if (event.shiftKey && event.key.toLowerCase() === 'h') {
+			event.preventDefault();
+			void intentEditor?.generateHighlighting(true);
+			return;
+		}
+
+		if (event.key.toLowerCase() !== 's') return;
 
 		event.preventDefault();
 		if (!commitDisabled) void handleCommit();
@@ -505,7 +532,7 @@
 
 		updateOrientation();
 		mediaQuery.addEventListener('change', updateOrientation);
-		window.addEventListener('keydown', handleSaveShortcut);
+		window.addEventListener('keydown', handleWorkspaceShortcut);
 		window.addEventListener('pagehide', flushPersistence);
 
 		void (async () => {
@@ -581,7 +608,7 @@
 
 		return () => {
 			mediaQuery.removeEventListener('change', updateOrientation);
-			window.removeEventListener('keydown', handleSaveShortcut);
+			window.removeEventListener('keydown', handleWorkspaceShortcut);
 			window.removeEventListener('pagehide', flushPersistence);
 			void flushPersistence();
 			stopSynchronizationProgress();
@@ -604,6 +631,7 @@
 	<section class="workspace__pane workspace__pane--intent" aria-label="Intent workspace">
 		<div class="workspace__editor">
 			<IntentEditor
+				bind:this={intentEditor}
 				value={draftIntent}
 				highlighting={intentHighlighting}
 				onchange={handleIntentChange}
@@ -638,10 +666,12 @@
 					class="intent-status__clear"
 					type="button"
 					disabled={clearingSavedData || persistenceState === 'loading'}
-					onclick={clearSavedData}
+					title="Clear saved data (⌘⇧Backspace)"
+					onclick={requestClearSavedData}
 				>
-					{clearingSavedData ? 'Clearing…' : 'Clear data'}
+					{clearingSavedData ? 'Clearing…' : 'Clear data'} <kbd>⌘⇧⌫</kbd>
 				</button>
+				<span class="intent-status__shortcut"><kbd>⌘⇧H</kbd> highlight</span>
 				<span class="intent-status__shortcut"><kbd>⌘S</kbd> to save</span>
 			</div>
 		</footer>
@@ -788,3 +818,27 @@
 		{/if}
 	</section>
 </main>
+
+<AlertDialog.Root bind:open={clearDataDialogOpen}>
+	<AlertDialog.Portal>
+		<AlertDialog.Overlay class="clear-dialog__overlay" />
+		<AlertDialog.Content class="clear-dialog__content">
+			<AlertDialog.Title class="clear-dialog__title">Clear all saved data?</AlertDialog.Title>
+			<AlertDialog.Description class="clear-dialog__description">
+				This permanently removes the current intent, generated source, commit history, and saved
+				highlighting from this browser.
+			</AlertDialog.Description>
+			<div class="clear-dialog__actions">
+				<AlertDialog.Cancel class="clear-dialog__button clear-dialog__button--cancel">
+					Cancel
+				</AlertDialog.Cancel>
+				<AlertDialog.Action
+					class="clear-dialog__button clear-dialog__button--danger"
+					onclick={clearSavedData}
+				>
+					Clear everything
+				</AlertDialog.Action>
+			</div>
+		</AlertDialog.Content>
+	</AlertDialog.Portal>
+</AlertDialog.Root>
