@@ -525,7 +525,7 @@
 							aria-label={status.message}
 						></Tooltip.Trigger>
 						<Tooltip.Portal to="body">
-							<Tooltip.Content class="status-tooltip" side="top" sideOffset={8}>
+							<Tooltip.Content class="status-tooltip" side="top" sideOffset={-10.5}>
 								{status.message}
 								<Tooltip.Arrow class="status-tooltip__arrow" />
 							</Tooltip.Content>
