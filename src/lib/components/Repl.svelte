@@ -1,11 +1,11 @@
 <script lang="ts">
 	import type { ConsoleLevel, ReplWorkerRequest, ReplWorkerResponse } from '$lib/repl/protocol';
-	import { RotateCcw } from '@lucide/svelte';
+	import { LoaderCircle, Play, RotateCcw, Square } from '@lucide/svelte';
 	import { onMount, tick } from 'svelte';
 
 	const EXECUTION_TIMEOUT = 5_000;
 
-	type EntryKind = 'system' | 'input' | 'result' | 'console' | 'error';
+	type EntryKind = 'input' | 'result' | 'console' | 'error';
 
 	type Entry = {
 		id: string;
@@ -30,6 +30,7 @@
 	let historyIndex = $state(0);
 	let ready = $state(false);
 	let busy = $state(false);
+	let loading = $state(false);
 	let pendingId: string | null = null;
 	let executionTimer: ReturnType<typeof setTimeout> | undefined;
 	let loadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -58,18 +59,13 @@
 			case 'loaded':
 				if (loadTimer) clearTimeout(loadTimer);
 				loadTimer = undefined;
+				loading = false;
 				ready = true;
-				append({
-					kind: 'system',
-					text:
-						message.exports.length > 0
-							? `Program loaded · ${message.exports.join(', ')}`
-							: 'Program loaded · no named exports'
-				});
 				break;
 			case 'load-error':
 				if (loadTimer) clearTimeout(loadTimer);
 				loadTimer = undefined;
+				loading = false;
 				ready = false;
 				append({ kind: 'error', text: message.message });
 				break;
@@ -95,40 +91,52 @@
 		loadedSource = nextSource;
 		pendingId = null;
 		busy = false;
+		loading = false;
 		ready = false;
 		entries = [];
 
-		if (!nextSource.trim()) {
-			append({ kind: 'system', text: 'No program loaded' });
-			return;
-		}
+		if (!nextSource.trim()) return;
 
+		loading = true;
 		worker = new Worker(new URL('../workers/repl.worker.ts', import.meta.url), { type: 'module' });
 		worker.onmessage = handleWorkerMessage;
 		worker.onerror = (event) => {
 			if (loadTimer) clearTimeout(loadTimer);
 			loadTimer = undefined;
+			loading = false;
 			ready = false;
 			busy = false;
 			append({ kind: 'error', text: event.message || 'The runtime stopped unexpectedly.' });
 		};
 
-		append({
-			kind: reason === 'timeout' ? 'error' : 'system',
-			text:
-				reason === 'timeout'
-					? `Execution exceeded ${EXECUTION_TIMEOUT / 1000} seconds. Runtime reset.`
-					: reason === 'reset'
-						? 'Resetting runtime…'
-						: 'Loading program…'
-		});
+		if (reason === 'timeout') {
+			append({
+				kind: 'error',
+				text: `Execution exceeded ${EXECUTION_TIMEOUT / 1000} seconds. Runtime reset.`
+			});
+		}
 		send({ type: 'load', source: nextSource });
 		loadTimer = setTimeout(() => {
 			worker?.terminate();
 			worker = undefined;
+			loading = false;
 			ready = false;
+			busy = false;
 			append({ kind: 'error', text: `Program loading exceeded ${EXECUTION_TIMEOUT / 1000} seconds.` });
 		}, EXECUTION_TIMEOUT);
+	}
+
+	function stopRuntime() {
+		worker?.terminate();
+		worker = undefined;
+		if (executionTimer) clearTimeout(executionTimer);
+		if (loadTimer) clearTimeout(loadTimer);
+		executionTimer = undefined;
+		loadTimer = undefined;
+		pendingId = null;
+		busy = false;
+		loading = false;
+		ready = false;
 	}
 
 	function execute() {
@@ -151,6 +159,12 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+			event.preventDefault();
+			entries = [];
+			return;
+		}
+
 		if (event.key === 'Enter') {
 			event.preventDefault();
 			execute();
@@ -196,10 +210,36 @@
 
 <div class="repl">
 	<header class="repl__toolbar">
-		<span>{ready ? 'Runtime ready' : 'Runtime offline'}</span>
-		<button type="button" disabled={!source.trim()} onclick={() => startRuntime(source, 'reset')}>
-			<RotateCcw size={12} strokeWidth={1.75} />
-			Reset
+		<button
+			type="button"
+			aria-label="Start runtime"
+			title="Start runtime"
+			disabled={loading || ready || !source.trim()}
+			onclick={() => startRuntime(source)}
+		>
+			{#if loading}
+				<LoaderCircle class="repl__spinner" size={13} strokeWidth={1.75} />
+			{:else}
+				<Play size={13} strokeWidth={1.75} />
+			{/if}
+		</button>
+		<button
+			type="button"
+			aria-label="Stop runtime"
+			title="Stop runtime"
+			disabled={loading || !worker}
+			onclick={stopRuntime}
+		>
+			<Square size={12} strokeWidth={1.75} />
+		</button>
+		<button
+			type="button"
+			aria-label="Restart runtime"
+			title="Restart runtime"
+			disabled={loading || !source.trim()}
+			onclick={() => startRuntime(source, 'reset')}
+		>
+			<RotateCcw size={13} strokeWidth={1.75} />
 		</button>
 	</header>
 
@@ -240,26 +280,30 @@
 	.repl__toolbar {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		min-height: 2.25rem;
-		padding-left: 1rem;
 		border-bottom: 1px solid rgba(231, 229, 228, 0.065);
-		color: #4f4c47;
-		font-size: 0.625rem;
-		letter-spacing: 0.045em;
 	}
 
 	.repl__toolbar button {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.375rem;
+		justify-content: center;
 		align-self: stretch;
-		padding: 0 0.75rem;
+		width: 2.375rem;
+		padding: 0;
 		border: 0;
-		background: rgba(231, 229, 228, 0.025);
+		border-right: 1px solid rgba(231, 229, 228, 0.055);
+		background: transparent;
 		color: #77736c;
-		font-size: 0.625rem;
 		cursor: pointer;
+		transition:
+			background-color 120ms ease,
+			color 120ms ease;
+	}
+
+	.repl__toolbar button:hover:not(:disabled) {
+		background: rgba(231, 229, 228, 0.04);
+		color: #bbb6ae;
 	}
 
 	.repl__toolbar button:disabled {
@@ -267,10 +311,19 @@
 		cursor: not-allowed;
 	}
 
-	.repl__toolbar button:focus-visible,
-	.repl__input input:focus-visible {
+	.repl__toolbar button:focus-visible {
 		outline: 1px solid rgba(231, 229, 228, 0.52);
 		outline-offset: 2px;
+	}
+
+	.repl__input input:focus,
+	.repl__input input:focus-visible {
+		outline: none;
+		box-shadow: none;
+	}
+
+	.repl__spinner {
+		animation: repl-spin 700ms linear infinite;
 	}
 
 	.repl__output {
@@ -302,11 +355,6 @@
 	.repl__entry:not(.repl__entry--input) pre {
 		grid-column: 1 / -1;
 		padding-left: 1.25rem;
-	}
-
-	.repl__entry[data-kind='system'] {
-		color: #4f4c47;
-		font-size: 0.6875rem;
 	}
 
 	.repl__entry[data-kind='result'] {
@@ -356,5 +404,11 @@
 
 	.repl__input input::placeholder {
 		color: #413f3b;
+	}
+
+	@keyframes repl-spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 </style>
