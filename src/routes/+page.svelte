@@ -3,8 +3,14 @@
 	import Repl from '$lib/components/Repl.svelte';
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import type { PersistedHighlighting } from '$lib/highlighting';
+	import {
+		WELCOME_COPY,
+		WELCOME_FILE_NAME,
+		WELCOME_INTENT,
+		WELCOME_REPL_COMMAND
+	} from '$lib/welcome';
 	import { presentableDiff } from '@codemirror/merge';
-	import { FilePlus2, FileText, FolderOpen } from '@lucide/svelte';
+	import { FilePlus2, FileText, FolderOpen, RefreshCw } from '@lucide/svelte';
 	import { AlertDialog, Command, Dialog, Tooltip } from 'bits-ui';
 	import { onMount, tick } from 'svelte';
 
@@ -56,6 +62,7 @@
 		name: string;
 		createdAt: string;
 		updatedAt: string;
+		welcome?: boolean;
 		project: StoredProject;
 	};
 
@@ -132,6 +139,11 @@
 	let intentChanges = $derived(summarizeIntentDiff(committedIntent, draftIntent));
 	let displayedSource = $derived(proposedSource ?? committedSource);
 	let sourceViewKey = $derived(`${proposedSource === null ? 'committed' : 'proposal'}:${displayedSource}`);
+	let isWelcomeFile = $derived(activeFile?.welcome === true);
+	let isWelcomeStart = $derived(isWelcomeFile && commits.length === 0 && !committedSource);
+	let welcomeReplCommand = $derived(
+		isWelcomeFile && commits.length === 1 ? WELCOME_REPL_COMMAND : ''
+	);
 	let status = $derived.by(() => {
 		if (persistenceState === 'error') return { kind: 'error', message: 'Draft storage is unavailable' };
 		if (reconciliationState === 'error') return { kind: 'error', message: 'Synchronization failed' };
@@ -282,10 +294,10 @@
 		};
 	}
 
-	function emptyProject(): StoredProject {
+	function emptyProject(draft = ''): StoredProject {
 		return {
 			version: 4,
-			draftIntent: '',
+			draftIntent: draft,
 			committedIntent: '',
 			committedSource: '',
 			proposedSource: null,
@@ -298,13 +310,14 @@
 		};
 	}
 
-	function createFile(name: string, project = emptyProject()): StoredFile {
+	function createFile(name: string, project = emptyProject(), welcome = false): StoredFile {
 		const timestamp = new Date().toISOString();
 		return {
 			id: crypto.randomUUID(),
 			name,
 			createdAt: timestamp,
 			updatedAt: timestamp,
+			...(welcome ? { welcome: true } : {}),
 			project
 		};
 	}
@@ -360,6 +373,7 @@
 				name: file.name,
 				createdAt: file.createdAt,
 				updatedAt: file.id === activeFileId ? timestamp : file.updatedAt,
+				...(file.welcome ? { welcome: true } : {}),
 				project: cloneProject(file.id === activeFileId ? project : file.project)
 			}))
 		};
@@ -750,6 +764,7 @@
 
 	function acceptProposal() {
 		if (proposedSource === null || proposalIntent === null) return;
+		const acceptingFirstWelcomeCommit = isWelcomeFile && commits.length === 0;
 
 		committedIntent = proposalIntent;
 		committedSource = proposedSource;
@@ -764,6 +779,7 @@
 		];
 		clearProposal();
 		reconciliationState = 'idle';
+		if (acceptingFirstWelcomeCommit) selectedOutputTab = 'repl';
 		void schedulePersistence('immediate');
 	}
 
@@ -838,7 +854,9 @@
 						reconciliationState = 'idle';
 					}
 				} else {
-					const file = createFile('Untitled', getProjectSnapshot());
+					const file = editedBeforeHydration
+						? createFile('Untitled', getProjectSnapshot())
+						: createFile(WELCOME_FILE_NAME, emptyProject(WELCOME_INTENT), true);
 					files = [file];
 					activeFileId = file.id;
 					if (!editedBeforeHydration) applyProject(file.project);
@@ -915,6 +933,16 @@
 				>
 					<FolderOpen size={13} strokeWidth={1.7} aria-hidden="true" />
 					<span>Open</span>
+				</button>
+				<button
+					class="file-toolbar__button"
+					type="button"
+					disabled={commitDisabled}
+					onclick={handleCommit}
+					title="Synchronize intent (⌘S)"
+				>
+					<RefreshCw size={13} strokeWidth={1.7} aria-hidden="true" />
+					<span>Sync</span>
 				</button>
 			</nav>
 		</header>
@@ -1037,9 +1065,18 @@
 						<SourceViewer source={displayedSource} original={proposedSource === null ? null : committedSource} />
 					{/key}
 				{:else}
-					<div class="output-empty">
-						<span>No generated source yet</span>
-						<small>Commit an intent to create the first implementation.</small>
+					<div class:output-empty--welcome={isWelcomeStart} class="output-empty">
+						{#if isWelcomeStart}
+							<span class="output-empty__eyebrow">Welcome to hz</span>
+							<strong>{WELCOME_COPY.title}</strong>
+							<small>{WELCOME_COPY.description}</small>
+							<button type="button" disabled={commitDisabled} onclick={handleCommit}>
+								Synchronize intent
+							</button>
+						{:else}
+							<span>No generated source yet</span>
+							<small>Synchronize an intent to create the first implementation.</small>
+						{/if}
 					</div>
 				{/if}
 		</div>
@@ -1051,7 +1088,11 @@
 			aria-label="JavaScript REPL"
 			hidden={selectedOutputTab !== 'repl'}
 		>
-			<Repl source={committedSource} />
+			<Repl
+				source={committedSource}
+				initialCommand={welcomeReplCommand}
+				hint={welcomeReplCommand ? WELCOME_COPY.replHint : ''}
+			/>
 		</div>
 
 		{#if reconciliationState === 'reviewing' && proposedSource !== null}

@@ -840,6 +840,66 @@ select {
 	line-height: 1.6;
 }
 
+.output-empty--welcome {
+	gap: 0;
+}
+
+.output-empty--welcome strong {
+	margin-top: 0.625rem;
+	color: #c9c5be;
+	font-size: 0.9375rem;
+	font-weight: 600;
+	letter-spacing: -0.015em;
+}
+
+.output-empty--welcome small {
+	max-width: 24rem;
+	margin-top: 0.75rem;
+	color: #716e68;
+}
+
+.output-empty__eyebrow {
+	color: #8b806e;
+	font-family: var(--font-mono);
+	font-size: 0.625rem;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.output-empty--welcome button {
+	min-height: 2rem;
+	margin-top: 1.25rem;
+	padding: 0 0.875rem;
+	border: 1px solid rgba(216, 210, 200, 0.72);
+	border-radius: 0.25rem;
+	background: transparent;
+	color: #aaa59d;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.025em;
+	cursor: pointer;
+	transition:
+		background-color 140ms ease,
+		color 140ms ease;
+}
+
+.output-empty--welcome button:hover:not(:disabled),
+.output-empty--welcome button:focus-visible {
+	background: #d8d2c8;
+	color: #171614;
+}
+
+.output-empty--welcome button:focus-visible {
+	outline: 1px solid rgba(231, 229, 228, 0.72);
+	outline-offset: 2px;
+}
+
+.output-empty--welcome button:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
 .synchronization {
 	display: flex;
 	flex-direction: column;

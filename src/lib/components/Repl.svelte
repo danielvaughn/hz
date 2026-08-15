@@ -18,9 +18,11 @@
 
 	type Props = {
 		source: string;
+		initialCommand?: string;
+		hint?: string;
 	};
 
-	let { source }: Props = $props();
+	let { source, initialCommand = '', hint = '' }: Props = $props();
 	let worker: Worker | undefined;
 	let loadedSource = '';
 	let mounted = false;
@@ -66,6 +68,7 @@
 				loading = false;
 				ready = true;
 				programExports = message.exports;
+				if (initialCommand && !command && entries.length === 0) command = initialCommand;
 				void tick().then(() => commandInput?.focus());
 				break;
 			case 'scope':
@@ -241,6 +244,9 @@
 	</header>
 
 	<div class="repl__output" bind:this={output} aria-live="polite" aria-label="REPL output">
+		{#if hint && entries.length === 0}
+			<div class="repl__hint">{hint}</div>
+		{/if}
 		{#each entries as entry (entry.id)}
 			<div class:repl__entry--input={entry.kind === 'input'} class="repl__entry" data-kind={entry.kind} data-level={entry.level}>
 				{#if entry.kind === 'input'}<span class="repl__marker">›</span>{/if}
@@ -326,6 +332,16 @@
 		min-height: 0;
 		padding: 1rem 1.25rem;
 		overflow: auto;
+	}
+
+	.repl__hint {
+		max-width: 30rem;
+		margin: auto;
+		color: #65625d;
+		font-family: var(--font-sans);
+		font-size: 0.75rem;
+		line-height: 1.65;
+		text-align: center;
 	}
 
 	.repl__entry {
