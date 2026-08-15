@@ -4,6 +4,7 @@
 	import { onMount, tick } from 'svelte';
 
 	const EXECUTION_TIMEOUT = 5_000;
+	const DEFAULT_COMMAND = 'program.main()';
 
 	type EntryKind = 'input' | 'result' | 'console' | 'error';
 
@@ -165,6 +166,13 @@
 			return;
 		}
 
+		if (command === '' && source.trim() && (event.key === 'Tab' || event.key === 'ArrowRight')) {
+			event.preventDefault();
+			command = DEFAULT_COMMAND;
+			void tick().then(() => commandInput?.setSelectionRange(DEFAULT_COMMAND.length, DEFAULT_COMMAND.length));
+			return;
+		}
+
 		if (event.key === 'Enter') {
 			event.preventDefault();
 			execute();
@@ -259,7 +267,7 @@
 			bind:value={command}
 			type="text"
 			aria-label="JavaScript expression"
-			placeholder={source.trim() ? 'program.main()' : 'Commit a program to begin'}
+			placeholder={source.trim() ? DEFAULT_COMMAND : 'Commit a program to begin'}
 			disabled={!ready || busy}
 			autocomplete="off"
 			spellcheck="false"

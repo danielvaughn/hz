@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { javascript } from '@codemirror/lang-javascript';
 	import { unifiedMergeView } from '@codemirror/merge';
+	import { oneDark } from '@codemirror/theme-one-dark';
 	import { basicSetup, EditorView } from 'codemirror';
 	import { onMount } from 'svelte';
 
@@ -58,6 +60,8 @@
 			parent: host,
 			extensions: [
 				basicSetup,
+				javascript(),
+				oneDark,
 				EditorView.lineWrapping,
 				EditorView.editable.of(false),
 				EditorView.contentAttributes.of({ 'aria-label': 'Generated JavaScript source' }),
@@ -91,5 +95,14 @@
 
 	.source-viewer :global(.cm-editor) {
 		height: 100%;
+		background-color: transparent !important;
+	}
+
+	.source-viewer :global(.cm-gutters) {
+		background-color: transparent !important;
+	}
+
+	.source-viewer :global(.cm-activeLineGutter) {
+		background-color: transparent !important;
 	}
 </style>
