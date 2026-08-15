@@ -4,6 +4,7 @@
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import type { PersistedHighlighting } from '$lib/highlighting';
 	import { presentableDiff } from '@codemirror/merge';
+	import { FilePlus2, FileText, FolderOpen } from '@lucide/svelte';
 	import { AlertDialog, Command, Dialog, Tooltip } from 'bits-ui';
 	import { onMount, tick } from 'svelte';
 
@@ -102,6 +103,7 @@
 	let fileNameError = $state('');
 	let fileNameInputElement = $state.raw<HTMLInputElement>();
 	let deleteFileDialogOpen = $state(false);
+	let openFileDialogOpen = $state(false);
 	let files = $state<StoredFile[]>([]);
 	let activeFileId = $state('');
 	let reconciliationState = $state<ReconciliationState>('idle');
@@ -448,6 +450,55 @@
 		fileNameDialogOpen = true;
 	}
 
+	function validateInlineFileName(name: string) {
+		if (!name) return 'Enter a file name.';
+		if (name.length > 80) return 'File names must be 80 characters or fewer.';
+		if (
+			files.some(
+				(file) => file.id !== activeFileId && file.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+			)
+		) {
+			return 'A file with that name already exists.';
+		}
+		return '';
+	}
+
+	function clearInlineFileNameValidity(event: Event) {
+		(event.currentTarget as HTMLInputElement).setCustomValidity('');
+	}
+
+	function commitInlineFileName(event: FocusEvent) {
+		const input = event.currentTarget as HTMLInputElement;
+		const name = input.value.trim();
+		const error = validateInlineFileName(name);
+
+		if (error) {
+			input.setCustomValidity(error);
+			input.reportValidity();
+			return;
+		}
+
+		input.setCustomValidity('');
+		input.value = name;
+		if (!activeFile || name === activeFile.name) return;
+
+		files = files.map((file) => (file.id === activeFileId ? { ...file, name } : file));
+		void schedulePersistence('immediate');
+	}
+
+	function handleInlineFileNameKeydown(event: KeyboardEvent) {
+		const input = event.currentTarget as HTMLInputElement;
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			input.blur();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			input.value = activeFile?.name ?? 'Untitled';
+			input.setCustomValidity('');
+			input.blur();
+		}
+	}
+
 	function validateFileName() {
 		const name = fileNameInput.trim();
 		if (!name) return 'Enter a file name.';
@@ -494,6 +545,7 @@
 		files = captured.files;
 		activeFileId = fileId;
 		applyProject(target.project);
+		openFileDialogOpen = false;
 		await schedulePersistence('immediate');
 	}
 
@@ -792,6 +844,49 @@
 	aria-label="hz workspace"
 >
 	<section class="workspace__pane workspace__pane--intent" aria-label="Intent workspace">
+		<header class="file-toolbar" aria-label="File controls">
+			<div class="file-toolbar__identity">
+				<FileText class="file-toolbar__file-icon" size={14} strokeWidth={1.6} aria-hidden="true" />
+				<label class="sr-only" for="current-file-name">Current file name</label>
+				{#key activeFileId}
+					<input
+						id="current-file-name"
+						class="file-toolbar__name"
+						type="text"
+						value={activeFile?.name ?? 'Untitled'}
+						maxlength="80"
+						autocomplete="off"
+						spellcheck="false"
+						disabled={fileOperationDisabled || !activeFile}
+						title="Edit file name"
+						oninput={clearInlineFileNameValidity}
+						onblur={commitInlineFileName}
+						onkeydown={handleInlineFileNameKeydown}
+					/>
+				{/key}
+			</div>
+			<nav class="file-toolbar__actions" aria-label="File actions">
+				<button
+					class="file-toolbar__button"
+					type="button"
+					disabled={fileOperationDisabled}
+					onclick={requestNewFile}
+				>
+					<FilePlus2 size={13} strokeWidth={1.7} aria-hidden="true" />
+					<span>New</span>
+				</button>
+				<button
+					class="file-toolbar__button"
+					type="button"
+					disabled={fileOperationDisabled || files.length === 0}
+					onclick={() => (openFileDialogOpen = true)}
+				>
+					<FolderOpen size={13} strokeWidth={1.7} aria-hidden="true" />
+					<span>Open</span>
+				</button>
+			</nav>
+		</header>
+
 		<div class="workspace__editor">
 			{#key activeFileId}
 				<IntentEditor
@@ -821,7 +916,6 @@
 						</Tooltip.Portal>
 					</Tooltip.Root>
 				</Tooltip.Provider>
-				<span class="intent-status__filename">{activeFile?.name ?? 'Untitled'}</span>
 				<div class="intent-status__diff" aria-label={`${intentChanges.additions} additions, ${intentChanges.removals} removals`}>
 					<span class="intent-status__additions">+{intentChanges.additions}</span>
 					<span class="intent-status__removals">−{intentChanges.removals}</span>
@@ -1167,6 +1261,38 @@
 					</button>
 				</div>
 			</form>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
+<Dialog.Root bind:open={openFileDialogOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="file-dialog__overlay" />
+		<Dialog.Content class="file-dialog__content file-dialog__content--open">
+			<Dialog.Title class="file-dialog__title">Open file</Dialog.Title>
+			<Dialog.Description class="file-dialog__description">
+				Choose a file from this workspace.
+			</Dialog.Description>
+			<div class="file-picker" role="list">
+				{#each files as file (file.id)}
+					<button
+						class:file-picker__item--active={file.id === activeFileId}
+						class="file-picker__item"
+						type="button"
+						disabled={fileOperationDisabled || file.id === activeFileId}
+						onclick={() => switchFile(file.id)}
+					>
+						<FileText size={14} strokeWidth={1.6} aria-hidden="true" />
+						<span>{file.name}</span>
+						{#if file.id === activeFileId}<small>Current</small>{/if}
+					</button>
+				{/each}
+			</div>
+			<div class="file-dialog__actions">
+				<Dialog.Close class="file-dialog__button file-dialog__button--cancel" type="button">
+					Cancel
+				</Dialog.Close>
+			</div>
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>

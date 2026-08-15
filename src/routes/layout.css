@@ -63,7 +63,7 @@ select {
 
 .workspace__pane--intent {
 	display: grid;
-	grid-template-rows: minmax(0, 1fr) auto;
+	grid-template-rows: auto minmax(0, 1fr) auto;
 	background: var(--pane-intent);
 }
 
@@ -131,6 +131,100 @@ select {
 	overflow: hidden;
 }
 
+.file-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-width: 0;
+	min-height: 2.75rem;
+	padding: 0 0.5rem 0 0.75rem;
+	border-bottom: 1px solid var(--seam);
+	background: rgba(10, 10, 9, 0.72);
+}
+
+.file-toolbar__identity {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	margin-right: 0.75rem;
+}
+
+.file-toolbar__file-icon {
+	flex: none;
+	margin-right: 0.375rem;
+	color: #625f5a;
+}
+
+.file-toolbar__name {
+	min-width: 4rem;
+	width: min(15rem, 27vw);
+	height: 1.75rem;
+	padding: 0 0.375rem;
+	border: 0;
+	background: transparent;
+	color: #b8b4ad;
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	font-weight: 500;
+	letter-spacing: -0.01em;
+	text-overflow: ellipsis;
+	transition: color 140ms ease;
+}
+
+.file-toolbar__name:focus {
+	outline: none;
+	box-shadow: none;
+	color: #e7e5e4;
+}
+
+.file-toolbar__name:disabled {
+	opacity: 0.55;
+}
+
+.file-toolbar__actions {
+	display: flex;
+	align-items: center;
+	gap: 0.125rem;
+}
+
+.file-toolbar__button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.375rem;
+	min-height: 1.875rem;
+	padding: 0 0.5rem;
+	border: 1px solid transparent;
+	border-radius: 0.25rem;
+	background: transparent;
+	color: #77736d;
+	font-size: 0.6875rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition:
+		background-color 140ms ease,
+		color 140ms ease;
+}
+
+.file-toolbar__button:hover:not(:disabled) {
+	background: rgba(231, 229, 228, 0.055);
+	color: #c9c5be;
+}
+
+.file-toolbar__button:focus-visible {
+	outline: 1px solid rgba(231, 229, 228, 0.5);
+	outline-offset: 1px;
+}
+
+.file-toolbar__button:active:not(:disabled) {
+	background: rgba(231, 229, 228, 0.085);
+}
+
+.file-toolbar__button:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
 .intent-status {
 	display: flex;
 	align-items: center;
@@ -149,14 +243,6 @@ select {
 	align-items: center;
 	gap: 0.625rem;
 	font-variant-numeric: tabular-nums;
-}
-
-.intent-status__filename {
-	max-width: min(13rem, 24vw);
-	overflow: hidden;
-	color: #8b8780;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 .intent-status__additions {
@@ -369,6 +455,63 @@ select {
 
 .file-dialog__content:focus {
 	outline: none;
+}
+
+.file-dialog__content--open {
+	padding-bottom: 1rem;
+}
+
+.file-picker {
+	display: grid;
+	gap: 0.25rem;
+	max-height: min(20rem, 48vh);
+	margin-top: 1rem;
+	padding: 0.25rem;
+	border: 1px solid rgba(231, 229, 228, 0.09);
+	border-radius: 0.375rem;
+	background: #0d0d0c;
+	overflow-y: auto;
+}
+
+.file-picker__item {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.625rem;
+	min-height: 2.5rem;
+	padding: 0 0.625rem;
+	border: 0;
+	border-radius: 0.25rem;
+	background: transparent;
+	color: #aaa69f;
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	text-align: left;
+	cursor: pointer;
+}
+
+.file-picker__item span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.file-picker__item small {
+	color: #5f5b55;
+	font-family: var(--font-sans);
+	font-size: 0.625rem;
+}
+
+.file-picker__item:hover:not(:disabled),
+.file-picker__item:focus-visible {
+	outline: none;
+	background: rgba(231, 229, 228, 0.07);
+	color: #e7e5e4;
+}
+
+.file-picker__item--active {
+	color: #77736d;
+	cursor: default;
 }
 
 .file-dialog__title {
@@ -967,6 +1110,10 @@ select {
 
 	.proposal-review {
 		grid-template-columns: 1fr;
+	}
+
+	.file-toolbar__name {
+		width: min(11rem, 34vw);
 	}
 }
 
