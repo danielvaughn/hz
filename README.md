@@ -1,42 +1,19 @@
-# sv
+## setup
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+1. `git clone git@github.com:danielvaughn/hz.git`
+2. `cd hz`
+3. `npm install`
+4. `npm run dev`
 
-## Creating a project
+## ideas to get started
 
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@0.17.0 create --template minimal --types ts --add tailwindcss="plugins:typography,forms" --install npm .
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+- A shopping cart that applies discounts, taxes, and free-shipping rules.
+- A task scheduler that prioritizes work by urgency, effort, and deadline.
+- A text formatter that converts rough notes into consistent Markdown.
+- A turn-based combat system with characters, attacks, armor, and status effects.
+- A personal budget that categorizes transactions and warns about overspending.
+- A recommendation engine that ranks movies from a user’s stated preferences.
+- A rate limiter with configurable request windows and per-user allowances.
+- A meeting-room allocator that resolves scheduling conflicts and capacity requirements.
+- A data validator that checks signup forms and returns useful error messages.
+- A word game that scores guesses and tracks state across multiple turns.
