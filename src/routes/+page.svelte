@@ -23,6 +23,7 @@
 
 	type OutputTab = 'source' | 'repl';
 	type PersistenceState = 'loading' | 'saved' | 'saving' | 'error';
+	type PersistenceTiming = 'debounced' | 'immediate';
 	type ReconciliationState = 'idle' | 'generating' | 'reviewing' | 'error';
 
 	type StoredIntentV1 = {
@@ -91,6 +92,8 @@
 	let synchronizationFinishing = $state(false);
 	let storage: LocalForage | undefined;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	let pendingSave: { revision: number; snapshot: StoredProject } | undefined;
+	let persistenceWriteChain = Promise.resolve();
 	let synchronizationFrame: number | undefined;
 	let saveRevision = 0;
 	let hydrated = false;
@@ -230,6 +233,16 @@
 	}
 
 	function getProjectSnapshot(): StoredProject {
+		const highlighting = intentHighlighting
+			? {
+					version: intentHighlighting.version,
+					taxonomyVersion: intentHighlighting.taxonomyVersion,
+					sourceText: intentHighlighting.sourceText,
+					marks: intentHighlighting.marks.map((mark) => ({ ...mark })),
+					dirtyRanges: intentHighlighting.dirtyRanges.map((range) => ({ ...range }))
+				}
+			: null;
+
 		return {
 			version: 4,
 			draftIntent,
@@ -240,27 +253,45 @@
 			proposalSummary,
 			proposalAssumptions: [...proposalAssumptions],
 			commits: commits.map((commit) => ({ ...commit })),
-			highlighting: intentHighlighting ?? null,
+			highlighting,
 			selectedOutputTab
 		};
 	}
 
-	function schedulePersistence() {
+	function flushPersistence() {
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = undefined;
+
+		if (!storage || !pendingSave) return persistenceWriteChain;
+
+		const storageInstance = storage;
+		const save = pendingSave;
+		pendingSave = undefined;
+		persistenceWriteChain = persistenceWriteChain.then(async () => {
+			try {
+				await storageInstance.setItem(STORAGE_KEY, save.snapshot);
+				if (save.revision === saveRevision) persistenceState = 'saved';
+			} catch (error) {
+				console.error('Project persistence failed.', error);
+				if (save.revision === saveRevision) persistenceState = 'error';
+			}
+		});
+
+		return persistenceWriteChain;
+	}
+
+	function schedulePersistence(timing: PersistenceTiming = 'debounced') {
 		if (!hydrated || !storage) return;
 
 		persistenceState = 'saving';
 		const revision = ++saveRevision;
-		const snapshot = getProjectSnapshot();
+		pendingSave = { revision, snapshot: getProjectSnapshot() };
 
 		if (saveTimer) clearTimeout(saveTimer);
-		saveTimer = setTimeout(async () => {
-			try {
-				await storage?.setItem(STORAGE_KEY, snapshot);
-				if (revision === saveRevision) persistenceState = 'saved';
-			} catch {
-				if (revision === saveRevision) persistenceState = 'error';
-			}
-		}, SAVE_DELAY);
+		if (timing === 'immediate') return flushPersistence();
+
+		saveTimer = setTimeout(() => void flushPersistence(), SAVE_DELAY);
+		return persistenceWriteChain;
 	}
 
 	function handleIntentChange(value: string) {
@@ -392,8 +423,8 @@
 			proposalIntent = nextIntent;
 			proposalSummary = result.summary;
 			proposalAssumptions = result.assumptions;
+			await schedulePersistence('immediate');
 			reconciliationState = 'reviewing';
-			schedulePersistence();
 		} catch (error) {
 			stopSynchronizationProgress();
 			reconciliationError = error instanceof Error ? error.message : 'Reconciliation failed.';
@@ -424,13 +455,13 @@
 		];
 		clearProposal();
 		reconciliationState = 'idle';
-		schedulePersistence();
+		void schedulePersistence('immediate');
 	}
 
 	function rejectProposal() {
 		clearProposal();
 		reconciliationState = 'idle';
-		schedulePersistence();
+		void schedulePersistence('immediate');
 	}
 
 	function dismissError() {
@@ -452,6 +483,7 @@
 		updateOrientation();
 		mediaQuery.addEventListener('change', updateOrientation);
 		window.addEventListener('keydown', handleSaveShortcut);
+		window.addEventListener('pagehide', flushPersistence);
 
 		void (async () => {
 			try {
@@ -527,7 +559,8 @@
 		return () => {
 			mediaQuery.removeEventListener('change', updateOrientation);
 			window.removeEventListener('keydown', handleSaveShortcut);
-			if (saveTimer) clearTimeout(saveTimer);
+			window.removeEventListener('pagehide', flushPersistence);
+			void flushPersistence();
 			stopSynchronizationProgress();
 		};
 	});
