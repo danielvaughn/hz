@@ -180,7 +180,7 @@ select {
 	width: var(--workspace-footer-height);
 	height: var(--workspace-footer-height);
 	margin-left: -0.875rem;
-	margin-right: calc(0.4375rem + 0.875rem - var(--workspace-footer-height));
+	margin-right: -1.15625rem;
 	padding: 0;
 	border: 0;
 	background: transparent;
