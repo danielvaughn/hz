@@ -20,8 +20,7 @@
 				fontSize: '13px'
 			},
 			'.cm-scroller': {
-				fontFamily:
-					"'IBM Plex Mono', 'SFMono-Regular', 'Cascadia Code', 'Roboto Mono', Consolas, monospace",
+				fontFamily: 'var(--font-mono)',
 				lineHeight: '1.65',
 				overflow: 'auto'
 			},

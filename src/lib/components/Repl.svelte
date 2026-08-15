@@ -234,6 +234,7 @@
 		grid-template-rows: auto minmax(0, 1fr) auto;
 		height: 100%;
 		background: #090908;
+		font-family: var(--font-mono);
 	}
 
 	.repl__toolbar {
@@ -241,7 +242,7 @@
 		align-items: center;
 		justify-content: space-between;
 		min-height: 2.25rem;
-		padding: 0 0.75rem 0 1rem;
+		padding-left: 1rem;
 		border-bottom: 1px solid rgba(231, 229, 228, 0.065);
 		color: #4f4c47;
 		font-size: 0.625rem;
@@ -252,10 +253,9 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
-		min-height: 1.625rem;
-		padding: 0 0.5rem;
-		border: 1px solid rgba(231, 229, 228, 0.08);
-		border-radius: 0.25rem;
+		align-self: stretch;
+		padding: 0 0.75rem;
+		border: 0;
 		background: rgba(231, 229, 228, 0.025);
 		color: #77736c;
 		font-size: 0.625rem;
@@ -332,7 +332,7 @@
 		grid-template-columns: auto minmax(0, 1fr);
 		align-items: center;
 		gap: 0.625rem;
-		min-height: 2.875rem;
+		min-height: var(--workspace-footer-height);
 		padding: 0 1.25rem;
 		border-top: 1px solid rgba(231, 229, 228, 0.075);
 		background: #0b0b0a;

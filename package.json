@@ -27,6 +27,7 @@
 	"dependencies": {
 		"@codemirror/merge": "^6.12.2",
 		"@earendil-works/pi-coding-agent": "^0.84.2",
+		"@fontsource/inter": "^5.3.0",
 		"@lucide/svelte": "^1.31.0",
 		"bits-ui": "^2.18.1",
 		"codemirror": "^6.0.2",
