@@ -154,7 +154,7 @@
 				fontSize: '14px'
 			},
 			'.cm-scroller': {
-				fontFamily: 'var(--font-sans)',
+				fontFamily: 'var(--font-mono)',
 				lineHeight: '1.65',
 				overflow: 'auto'
 			},
