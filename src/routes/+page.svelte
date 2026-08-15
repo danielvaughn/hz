@@ -4,7 +4,7 @@
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import type { PersistedHighlighting } from '$lib/highlighting';
 	import { presentableDiff } from '@codemirror/merge';
-	import { AlertDialog, Tooltip } from 'bits-ui';
+	import { AlertDialog, Command, Dialog, Tooltip } from 'bits-ui';
 	import { onMount } from 'svelte';
 
 	const MIN_SPLIT = 20;
@@ -92,6 +92,8 @@
 	let persistenceState = $state<PersistenceState>('loading');
 	let clearingSavedData = $state(false);
 	let clearDataDialogOpen = $state(false);
+	let commandMenuOpen = $state(false);
+	let commandSearch = $state('');
 	let reconciliationState = $state<ReconciliationState>('idle');
 	let reconciliationError = $state('');
 	let synchronizationProgress = $state(0);
@@ -330,6 +332,16 @@
 		clearDataDialogOpen = true;
 	}
 
+	function setCommandMenuOpen(open: boolean) {
+		commandMenuOpen = open;
+		if (!open) commandSearch = '';
+	}
+
+	function runCommand(action: () => void | Promise<void>) {
+		setCommandMenuOpen(false);
+		void action();
+	}
+
 	async function clearSavedData() {
 		if (!storage || clearingSavedData) return;
 		clearingSavedData = true;
@@ -508,6 +520,14 @@
 	function handleWorkspaceShortcut(event: KeyboardEvent) {
 		if (!(event.metaKey || event.ctrlKey)) return;
 
+		if (!event.shiftKey && event.key.toLowerCase() === 'k') {
+			event.preventDefault();
+			setCommandMenuOpen(!commandMenuOpen);
+			return;
+		}
+
+		if (commandMenuOpen) return;
+
 		if (event.shiftKey && event.key === 'Backspace') {
 			event.preventDefault();
 			requestClearSavedData();
@@ -663,16 +683,13 @@
 			</div>
 			<div class="intent-status__actions">
 				<button
-					class="intent-status__clear"
+					class="intent-status__command"
 					type="button"
-					disabled={clearingSavedData || persistenceState === 'loading'}
-					title="Clear saved data (⌘⇧Backspace)"
-					onclick={requestClearSavedData}
+					title="Open command menu (⌘K)"
+					onclick={() => setCommandMenuOpen(true)}
 				>
-					{clearingSavedData ? 'Clearing…' : 'Clear data'} <kbd>⌘⇧⌫</kbd>
+					Commands <kbd>⌘K</kbd>
 				</button>
-				<span class="intent-status__shortcut"><kbd>⌘⇧H</kbd> highlight</span>
-				<span class="intent-status__shortcut"><kbd>⌘S</kbd> to save</span>
 			</div>
 		</footer>
 	</section>
@@ -818,6 +835,102 @@
 		{/if}
 	</section>
 </main>
+
+<Dialog.Root open={commandMenuOpen} onOpenChange={setCommandMenuOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="command-dialog__overlay" />
+		<Dialog.Content class="command-dialog__content">
+			<Dialog.Title class="sr-only">Command menu</Dialog.Title>
+			<Dialog.Description class="sr-only">
+				Search for and run a workspace command.
+			</Dialog.Description>
+
+			<Command.Root class="command-menu" loop>
+				<div class="command-menu__search">
+					<Command.Input
+						bind:value={commandSearch}
+						class="command-menu__input"
+						placeholder="Type a command…"
+						autofocus
+					/>
+					<kbd>⌘K</kbd>
+				</div>
+
+				<Command.List class="command-menu__list">
+					<Command.Viewport>
+						<Command.Empty class="command-menu__empty">No matching commands</Command.Empty>
+
+						<Command.Group value="workspace">
+							<Command.GroupHeading class="command-menu__heading">Workspace</Command.GroupHeading>
+							<Command.GroupItems>
+								<Command.Item
+									class="command-menu__item"
+									value="synchronize"
+									keywords={['save', 'commit', 'generate', 'sync']}
+									disabled={commitDisabled}
+									onSelect={() => runCommand(handleCommit)}
+								>
+									<span>Synchronize</span>
+									<kbd>⌘S</kbd>
+								</Command.Item>
+								<Command.Item
+									class="command-menu__item"
+									value="rehighlight"
+									keywords={['highlight', 'syntax', 'color', 'llm']}
+									onSelect={() =>
+										runCommand(() => intentEditor?.generateHighlighting(true) ?? Promise.resolve())}
+								>
+									<span>Highlight</span>
+									<kbd>⌘⇧H</kbd>
+								</Command.Item>
+							</Command.GroupItems>
+						</Command.Group>
+
+						{#if reconciliationState === 'reviewing' && proposedSource !== null}
+							<Command.Group value="review">
+								<Command.GroupHeading class="command-menu__heading">Review</Command.GroupHeading>
+								<Command.GroupItems>
+									<Command.Item
+										class="command-menu__item"
+										value="accept-implementation"
+										keywords={['approve', 'apply', 'proposal']}
+										onSelect={() => runCommand(acceptProposal)}
+									>
+										<span>Accept implementation</span>
+									</Command.Item>
+									<Command.Item
+										class="command-menu__item"
+										value="reject-implementation"
+										keywords={['discard', 'decline', 'proposal']}
+										onSelect={() => runCommand(rejectProposal)}
+									>
+										<span>Reject implementation</span>
+									</Command.Item>
+								</Command.GroupItems>
+							</Command.Group>
+						{/if}
+
+						<Command.Group value="data">
+							<Command.GroupHeading class="command-menu__heading">Data</Command.GroupHeading>
+							<Command.GroupItems>
+								<Command.Item
+									class="command-menu__item command-menu__item--danger"
+									value="clear-saved-data"
+									keywords={['delete', 'reset', 'remove', 'storage']}
+									disabled={persistenceState === 'loading' || clearingSavedData}
+									onSelect={() => runCommand(requestClearSavedData)}
+								>
+									<span>Clear saved data</span>
+									<kbd>⌘⇧⌫</kbd>
+								</Command.Item>
+							</Command.GroupItems>
+						</Command.Group>
+					</Command.Viewport>
+				</Command.List>
+			</Command.Root>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
 
 <AlertDialog.Root bind:open={clearDataDialogOpen}>
 	<AlertDialog.Portal>
