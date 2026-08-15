@@ -3,6 +3,7 @@
 	import Repl from '$lib/components/Repl.svelte';
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import { presentableDiff } from '@codemirror/merge';
+	import { Tooltip } from 'bits-ui';
 	import { onMount } from 'svelte';
 
 	const MIN_SPLIT = 20;
@@ -97,6 +98,16 @@
 	let intentChanges = $derived(summarizeIntentDiff(committedIntent, draftIntent));
 	let displayedSource = $derived(proposedSource ?? committedSource);
 	let sourceViewKey = $derived(`${proposedSource === null ? 'committed' : 'proposal'}:${displayedSource}`);
+	let status = $derived.by(() => {
+		if (persistenceState === 'error') return { kind: 'error', message: 'Draft storage is unavailable' };
+		if (reconciliationState === 'error') return { kind: 'error', message: 'Synchronization failed' };
+		if (reconciliationState === 'generating') return { kind: 'working', message: 'Synchronizing implementation' };
+		if (reconciliationState === 'reviewing') return { kind: 'review', message: 'Implementation ready for review' };
+		if (persistenceState === 'loading') return { kind: 'neutral', message: 'Loading saved project' };
+		if (persistenceState === 'saving') return { kind: 'working', message: 'Saving draft' };
+		if (dirty) return { kind: 'dirty', message: 'Intent has uncommitted changes' };
+		return { kind: 'clean', message: 'Intent and implementation are synchronized' };
+	});
 
 	function clamp(value: number) {
 		return Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, value));
@@ -505,9 +516,26 @@
 		</div>
 
 		<footer class="intent-status">
-			<div class="intent-status__diff" aria-label={`${intentChanges.additions} additions, ${intentChanges.removals} removals`}>
-				<span class="intent-status__additions">+{intentChanges.additions}</span>
-				<span class="intent-status__removals">−{intentChanges.removals}</span>
+			<div class="intent-status__summary">
+				<Tooltip.Provider delayDuration={250}>
+					<Tooltip.Root>
+						<Tooltip.Trigger
+							class="intent-status__indicator"
+							data-status={status.kind}
+							aria-label={status.message}
+						></Tooltip.Trigger>
+						<Tooltip.Portal to="body">
+							<Tooltip.Content class="status-tooltip" side="top" sideOffset={8}>
+								{status.message}
+								<Tooltip.Arrow class="status-tooltip__arrow" />
+							</Tooltip.Content>
+						</Tooltip.Portal>
+					</Tooltip.Root>
+				</Tooltip.Provider>
+				<div class="intent-status__diff" aria-label={`${intentChanges.additions} additions, ${intentChanges.removals} removals`}>
+					<span class="intent-status__additions">+{intentChanges.additions}</span>
+					<span class="intent-status__removals">−{intentChanges.removals}</span>
+				</div>
 			</div>
 			<span class="intent-status__shortcut"><kbd>⌘S</kbd> to save</span>
 		</footer>

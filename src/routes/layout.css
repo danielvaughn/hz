@@ -168,6 +168,69 @@ select {
 	color: #77746e;
 }
 
+.intent-status__summary {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+.intent-status__indicator {
+	width: 0.4375rem;
+	height: 0.4375rem;
+	padding: 0;
+	border: 0;
+	border-radius: 999px;
+	background: #5d5a55;
+	box-shadow: 0 0 0.45rem rgba(93, 90, 85, 0.18);
+}
+
+.intent-status__indicator[data-status='clean'] {
+	background: #6f8f78;
+	box-shadow: 0 0 0.45rem rgba(111, 143, 120, 0.26);
+}
+
+.intent-status__indicator[data-status='dirty'] {
+	background: #b89a66;
+	box-shadow: 0 0 0.45rem rgba(184, 154, 102, 0.26);
+}
+
+.intent-status__indicator[data-status='working'] {
+	background: #7da8c7;
+	box-shadow: 0 0 0.5rem rgba(125, 168, 199, 0.32);
+}
+
+.intent-status__indicator[data-status='review'] {
+	background: #46a8ff;
+	box-shadow: 0 0 0.5rem rgba(70, 168, 255, 0.4);
+}
+
+.intent-status__indicator[data-status='error'] {
+	background: #b77970;
+	box-shadow: 0 0 0.5rem rgba(183, 121, 112, 0.32);
+}
+
+.intent-status__indicator:focus-visible {
+	outline: 1px solid rgba(231, 229, 228, 0.72);
+	outline-offset: 3px;
+}
+
+.status-tooltip {
+	--status-tooltip-background: #242422;
+
+	z-index: 1000;
+	padding: 0.375rem 0.5rem;
+	border-radius: 0.25rem;
+	background: var(--status-tooltip-background);
+	box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.38);
+	color: #b0aca5;
+	font-size: 0.6875rem;
+	line-height: 1.35;
+}
+
+.status-tooltip__arrow {
+	color: var(--status-tooltip-background);
+}
+
 .output-tabs__tab:focus-visible,
 .review-button:focus-visible,
 .proposal-error button:focus-visible {
