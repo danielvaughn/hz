@@ -134,8 +134,9 @@ select {
 .intent-status {
 	display: flex;
 	align-items: center;
+	justify-content: space-between;
 	min-height: var(--workspace-footer-height);
-	padding-left: 0.875rem;
+	padding: 0 0.875rem;
 	border-top: 1px solid var(--seam);
 	background: rgba(10, 10, 9, 0.72);
 	color: var(--text-muted);
@@ -156,6 +157,15 @@ select {
 
 .intent-status__removals {
 	color: #a8756e;
+}
+
+.intent-status__shortcut {
+	color: #55524d;
+}
+
+.intent-status__shortcut kbd {
+	font-family: inherit;
+	color: #77746e;
 }
 
 .output-tabs__tab:focus-visible,

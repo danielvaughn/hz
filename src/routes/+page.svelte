@@ -509,6 +509,7 @@
 				<span class="intent-status__additions">+{intentChanges.additions}</span>
 				<span class="intent-status__removals">−{intentChanges.removals}</span>
 			</div>
+			<span class="intent-status__shortcut"><kbd>⌘S</kbd> to save</span>
 		</footer>
 	</section>
 
