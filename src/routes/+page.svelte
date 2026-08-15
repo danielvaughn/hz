@@ -5,12 +5,12 @@
 	import type { PersistedHighlighting } from '$lib/highlighting';
 	import { presentableDiff } from '@codemirror/merge';
 	import { AlertDialog, Command, Dialog, Tooltip } from 'bits-ui';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	const MIN_SPLIT = 20;
 	const MAX_SPLIT = 80;
 	const KEYBOARD_STEP = 2;
-	const STORAGE_KEY = 'project:default';
+	const STORAGE_KEY = 'workspace';
 	const SAVE_DELAY = 120;
 	const SYNCHRONIZATION_LIMIT = 92;
 	const SYNCHRONIZATION_TIME_CONSTANT = 8_000;
@@ -29,12 +29,6 @@
 		generateHighlighting: (forceFullDocument?: boolean) => Promise<void>;
 	};
 
-	type StoredIntentV1 = {
-		version: 1;
-		draftIntent: string;
-		committedIntent: string;
-	};
-
 	type CommitRecord = {
 		id: string;
 		createdAt: string;
@@ -42,8 +36,8 @@
 		source: string;
 	};
 
-	type StoredProjectV2 = {
-		version: 2;
+	type StoredProject = {
+		version: 4;
 		draftIntent: string;
 		committedIntent: string;
 		committedSource: string;
@@ -51,18 +45,26 @@
 		proposalIntent: string | null;
 		proposalSummary: string;
 		proposalAssumptions: string[];
+		commits: CommitRecord[];
+		highlighting: PersistedHighlighting | null;
 		selectedOutputTab: OutputTab;
 	};
 
-	type StoredProjectV3 = Omit<StoredProjectV2, 'version'> & {
-		version: 3;
-		commits: CommitRecord[];
+	type StoredFile = {
+		id: string;
+		name: string;
+		createdAt: string;
+		updatedAt: string;
+		project: StoredProject;
 	};
 
-	type StoredProject = Omit<StoredProjectV3, 'version'> & {
-		version: 4;
-		highlighting: PersistedHighlighting | null;
+	type StoredWorkspace = {
+		version: 1;
+		activeFileId: string;
+		files: StoredFile[];
 	};
+
+	type FileNameDialogMode = 'new' | 'rename';
 
 	type ReconcileResponse = {
 		proposedSource: string;
@@ -73,7 +75,7 @@
 	let workspace: HTMLElement;
 	let outputPane: HTMLElement;
 	let reviewPanel: HTMLElement;
-	let intentEditor: IntentEditorHandle | undefined;
+	let intentEditor = $state.raw<IntentEditorHandle>();
 	let split = $state(50);
 	let resizing = $state(false);
 	let reviewResizing = $state(false);
@@ -94,13 +96,21 @@
 	let clearDataDialogOpen = $state(false);
 	let commandMenuOpen = $state(false);
 	let commandSearch = $state('');
+	let fileNameDialogOpen = $state(false);
+	let fileNameDialogMode = $state<FileNameDialogMode>('new');
+	let fileNameInput = $state('');
+	let fileNameError = $state('');
+	let fileNameInputElement = $state.raw<HTMLInputElement>();
+	let deleteFileDialogOpen = $state(false);
+	let files = $state<StoredFile[]>([]);
+	let activeFileId = $state('');
 	let reconciliationState = $state<ReconciliationState>('idle');
 	let reconciliationError = $state('');
 	let synchronizationProgress = $state(0);
 	let synchronizationFinishing = $state(false);
 	let storage: LocalForage | undefined;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let pendingSave: { revision: number; snapshot: StoredProject } | undefined;
+	let pendingSave: { revision: number; snapshot: StoredWorkspace } | undefined;
 	let persistenceWriteChain = Promise.resolve();
 	let synchronizationFrame: number | undefined;
 	let saveRevision = 0;
@@ -113,6 +123,10 @@
 	let commitDisabled = $derived(
 		!dirty || reconciliationState === 'generating' || reconciliationState === 'reviewing'
 	);
+	let fileOperationDisabled = $derived(
+		reconciliationState === 'generating' || persistenceState === 'loading' || clearingSavedData
+	);
+	let activeFile = $derived(files.find((file) => file.id === activeFileId));
 	let intentChanges = $derived(summarizeIntentDiff(committedIntent, draftIntent));
 	let displayedSource = $derived(proposedSource ?? committedSource);
 	let sourceViewKey = $derived(`${proposedSource === null ? 'committed' : 'proposal'}:${displayedSource}`);
@@ -266,6 +280,61 @@
 		};
 	}
 
+	function emptyProject(): StoredProject {
+		return {
+			version: 4,
+			draftIntent: '',
+			committedIntent: '',
+			committedSource: '',
+			proposedSource: null,
+			proposalIntent: null,
+			proposalSummary: '',
+			proposalAssumptions: [],
+			commits: [],
+			highlighting: null,
+			selectedOutputTab: 'source'
+		};
+	}
+
+	function createFile(name: string, project = emptyProject()): StoredFile {
+		const timestamp = new Date().toISOString();
+		return {
+			id: crypto.randomUUID(),
+			name,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+			project
+		};
+	}
+
+	function applyProject(project: StoredProject) {
+		draftIntent = project.draftIntent;
+		committedIntent = project.committedIntent;
+		committedSource = project.committedSource;
+		proposedSource = project.proposedSource;
+		proposalIntent = project.proposalIntent;
+		proposalSummary = project.proposalSummary;
+		proposalAssumptions = [...project.proposalAssumptions];
+		commits = project.commits.map((commit) => ({ ...commit }));
+		intentHighlighting = project.highlighting;
+		selectedOutputTab = project.selectedOutputTab;
+		reconciliationState = project.proposedSource ? 'reviewing' : 'idle';
+		reconciliationError = '';
+		reviewHeight = null;
+	}
+
+	function getWorkspaceSnapshot(activeId = activeFileId): StoredWorkspace {
+		const timestamp = new Date().toISOString();
+		const project = getProjectSnapshot();
+		return {
+			version: 1,
+			activeFileId: activeId,
+			files: files.map((file) =>
+				file.id === activeFileId ? { ...file, updatedAt: timestamp, project } : file
+			)
+		};
+	}
+
 	function flushPersistence() {
 		if (saveTimer) clearTimeout(saveTimer);
 		saveTimer = undefined;
@@ -293,7 +362,7 @@
 
 		persistenceState = 'saving';
 		const revision = ++saveRevision;
-		pendingSave = { revision, snapshot: getProjectSnapshot() };
+		pendingSave = { revision, snapshot: getWorkspaceSnapshot() };
 
 		if (saveTimer) clearTimeout(saveTimer);
 		if (timing === 'immediate') return flushPersistence();
@@ -337,9 +406,117 @@
 		if (!open) commandSearch = '';
 	}
 
-	function runCommand(action: () => void | Promise<void>) {
+	async function runCommand(action: () => void | Promise<void>) {
 		setCommandMenuOpen(false);
+		await tick();
 		void action();
+	}
+
+	function nextUntitledName() {
+		const names = new Set(files.map((file) => file.name.toLocaleLowerCase()));
+		if (!names.has('untitled')) return 'Untitled';
+
+		let suffix = 2;
+		while (names.has(`untitled ${suffix}`)) suffix += 1;
+		return `Untitled ${suffix}`;
+	}
+
+	function setFileNameDialogOpen(open: boolean) {
+		fileNameDialogOpen = open;
+		if (!open) fileNameError = '';
+	}
+
+	function focusFileNameInput(event: Event) {
+		event.preventDefault();
+		fileNameInputElement?.focus();
+		fileNameInputElement?.select();
+	}
+
+	function requestNewFile() {
+		if (fileOperationDisabled) return;
+		fileNameDialogMode = 'new';
+		fileNameInput = nextUntitledName();
+		fileNameError = '';
+		fileNameDialogOpen = true;
+	}
+
+	function requestRenameFile() {
+		if (fileOperationDisabled || !activeFile) return;
+		fileNameDialogMode = 'rename';
+		fileNameInput = activeFile.name;
+		fileNameError = '';
+		fileNameDialogOpen = true;
+	}
+
+	function validateFileName() {
+		const name = fileNameInput.trim();
+		if (!name) return 'Enter a file name.';
+		if (name.length > 80) return 'File names must be 80 characters or fewer.';
+
+		const duplicate = files.some(
+			(file) =>
+				file.name.toLocaleLowerCase() === name.toLocaleLowerCase() &&
+				(fileNameDialogMode === 'new' || file.id !== activeFileId)
+		);
+		if (duplicate) return 'A file with that name already exists.';
+		return '';
+	}
+
+	async function submitFileName(event: SubmitEvent) {
+		event.preventDefault();
+		if (fileOperationDisabled) return;
+
+		fileNameError = validateFileName();
+		if (fileNameError) return;
+
+		const name = fileNameInput.trim();
+		if (fileNameDialogMode === 'rename') {
+			files = files.map((file) => (file.id === activeFileId ? { ...file, name } : file));
+		} else {
+			const captured = getWorkspaceSnapshot();
+			const file = createFile(name);
+			files = [...captured.files, file];
+			activeFileId = file.id;
+			applyProject(file.project);
+		}
+
+		setFileNameDialogOpen(false);
+		await schedulePersistence('immediate');
+	}
+
+	async function switchFile(fileId: string) {
+		if (fileOperationDisabled || fileId === activeFileId) return;
+
+		const captured = getWorkspaceSnapshot(fileId);
+		const target = captured.files.find((file) => file.id === fileId);
+		if (!target) return;
+
+		files = captured.files;
+		activeFileId = fileId;
+		applyProject(target.project);
+		await schedulePersistence('immediate');
+	}
+
+	function requestDeleteFile() {
+		if (fileOperationDisabled || !activeFile) return;
+		deleteFileDialogOpen = true;
+	}
+
+	async function deleteCurrentFile() {
+		if (fileOperationDisabled || !activeFile) return;
+
+		const captured = getWorkspaceSnapshot();
+		const deletedIndex = captured.files.findIndex((file) => file.id === activeFileId);
+		let remaining = captured.files.filter((file) => file.id !== activeFileId);
+
+		if (remaining.length === 0) remaining = [createFile('Untitled')];
+		const target = remaining[Math.min(Math.max(deletedIndex, 0), remaining.length - 1)];
+		if (!target) return;
+
+		files = remaining;
+		activeFileId = target.id;
+		applyProject(target.project);
+		await schedulePersistence('immediate');
 	}
 
 	async function clearSavedData() {
@@ -560,65 +737,31 @@
 				const { default: localforage } = await import('localforage');
 				storage = localforage.createInstance({ name: 'hz', storeName: 'projects' });
 
-				const stored = await storage.getItem<
-					StoredProject | StoredProjectV3 | StoredProjectV2 | StoredIntentV1
-				>(STORAGE_KEY);
-				if (stored?.version === 4) {
-					committedIntent = stored.committedIntent;
-					committedSource = stored.committedSource;
-					commits = stored.commits;
-					selectedOutputTab = stored.selectedOutputTab;
+				const stored = await storage.getItem<StoredWorkspace>(STORAGE_KEY);
+				const storedFiles = stored?.version === 1 && Array.isArray(stored.files) ? stored.files : [];
+				const storedActiveFile = storedFiles.find((file) => file.id === stored?.activeFileId);
 
-					if (!editedBeforeHydration) {
-						draftIntent = stored.draftIntent;
-						intentHighlighting = stored.highlighting;
-						proposedSource = stored.proposedSource;
-						proposalIntent = stored.proposalIntent;
-						proposalSummary = stored.proposalSummary;
-						proposalAssumptions = stored.proposalAssumptions;
-						reconciliationState = stored.proposedSource ? 'reviewing' : 'idle';
-					}
-				} else if (stored?.version === 3) {
-					committedIntent = stored.committedIntent;
-					committedSource = stored.committedSource;
-					commits = stored.commits;
-					selectedOutputTab = stored.selectedOutputTab;
+				if (storedActiveFile) {
+					const prehydrationDraft = draftIntent;
+					files = storedFiles;
+					activeFileId = storedActiveFile.id;
+					applyProject(storedActiveFile.project);
 
-					if (!editedBeforeHydration) {
-						draftIntent = stored.draftIntent;
+					if (editedBeforeHydration) {
+						draftIntent = prehydrationDraft;
 						intentHighlighting = null;
-						proposedSource = stored.proposedSource;
-						proposalIntent = stored.proposalIntent;
-						proposalSummary = stored.proposalSummary;
-						proposalAssumptions = stored.proposalAssumptions;
-						reconciliationState = stored.proposedSource ? 'reviewing' : 'idle';
+						clearProposal();
+						reconciliationState = 'idle';
 					}
-				} else if (stored?.version === 2) {
-					committedIntent = stored.committedIntent;
-					committedSource = stored.committedSource;
-					selectedOutputTab = stored.selectedOutputTab;
-
-					if (!editedBeforeHydration) {
-						draftIntent = stored.draftIntent;
-						intentHighlighting = null;
-						proposedSource = stored.proposedSource;
-						proposalIntent = stored.proposalIntent;
-						proposalSummary = stored.proposalSummary;
-						proposalAssumptions = stored.proposalAssumptions;
-						reconciliationState = stored.proposedSource ? 'reviewing' : 'idle';
-					}
-				} else if (stored?.version === 1) {
-					committedIntent = stored.committedIntent;
-					if (!editedBeforeHydration) {
-						draftIntent = stored.draftIntent;
-						intentHighlighting = null;
-					}
-				} else if (!editedBeforeHydration) {
-					intentHighlighting = null;
+				} else {
+					const file = createFile('Untitled', getProjectSnapshot());
+					files = [file];
+					activeFileId = file.id;
+					if (!editedBeforeHydration) applyProject(file.project);
 				}
 
 				hydrated = true;
-				if (editedBeforeHydration) schedulePersistence();
+				if (editedBeforeHydration || !storedActiveFile) void schedulePersistence('immediate');
 				else persistenceState = 'saved';
 			} catch {
 				hydrated = true;
@@ -650,13 +793,15 @@
 >
 	<section class="workspace__pane workspace__pane--intent" aria-label="Intent workspace">
 		<div class="workspace__editor">
-			<IntentEditor
-				bind:this={intentEditor}
-				value={draftIntent}
-				highlighting={intentHighlighting}
-				onchange={handleIntentChange}
-				onhighlightingchange={handleHighlightingChange}
-			/>
+			{#key activeFileId}
+				<IntentEditor
+					bind:this={intentEditor}
+					value={draftIntent}
+					highlighting={intentHighlighting}
+					onchange={handleIntentChange}
+					onhighlightingchange={handleHighlightingChange}
+				/>
+			{/key}
 		</div>
 
 		<footer class="intent-status">
@@ -676,6 +821,7 @@
 						</Tooltip.Portal>
 					</Tooltip.Root>
 				</Tooltip.Provider>
+				<span class="intent-status__filename">{activeFile?.name ?? 'Untitled'}</span>
 				<div class="intent-status__diff" aria-label={`${intentChanges.additions} additions, ${intentChanges.removals} removals`}>
 					<span class="intent-status__additions">+{intentChanges.additions}</span>
 					<span class="intent-status__removals">−{intentChanges.removals}</span>
@@ -880,11 +1026,66 @@
 									onSelect={() =>
 										runCommand(() => intentEditor?.generateHighlighting(true) ?? Promise.resolve())}
 								>
-									<span>Highlight</span>
+									<span>Rehighlight</span>
 									<kbd>⌘⇧H</kbd>
 								</Command.Item>
 							</Command.GroupItems>
 						</Command.Group>
+
+						<Command.Group value="file-actions">
+							<Command.GroupHeading class="command-menu__heading">File</Command.GroupHeading>
+							<Command.GroupItems>
+								<Command.Item
+									class="command-menu__item"
+									value="new-file"
+									keywords={['create', 'add', 'document']}
+									disabled={fileOperationDisabled}
+									onSelect={() => runCommand(requestNewFile)}
+								>
+									<span>New file</span>
+								</Command.Item>
+								<Command.Item
+									class="command-menu__item"
+									value="rename-file"
+									keywords={['name', 'edit', 'document']}
+									disabled={fileOperationDisabled || !activeFile}
+									onSelect={() => runCommand(requestRenameFile)}
+								>
+									<span>Rename file</span>
+								</Command.Item>
+								<Command.Item
+									class="command-menu__item command-menu__item--danger"
+									value="delete-file"
+									keywords={['remove', 'discard', 'document']}
+									disabled={fileOperationDisabled || !activeFile}
+									onSelect={() => runCommand(requestDeleteFile)}
+								>
+									<span>Delete file</span>
+								</Command.Item>
+							</Command.GroupItems>
+						</Command.Group>
+
+						{#if files.length > 0}
+							<Command.Group value="switch-file">
+								<Command.GroupHeading class="command-menu__heading">Switch file</Command.GroupHeading>
+								<Command.GroupItems>
+									{#each files as file (file.id)}
+										<Command.Item
+											class="command-menu__item"
+											value={`switch-file-${file.id}`}
+											keywords={[file.name, 'switch', 'open', 'file']}
+											disabled={fileOperationDisabled || file.id === activeFileId}
+											onSelect={() => runCommand(() => switchFile(file.id))}
+										>
+											<span>{file.name}</span>
+											{#if file.id === activeFileId}
+												<span class="command-menu__item-meta">Current</span>
+											{/if}
+										</Command.Item>
+									{/each}
+								</Command.GroupItems>
+							</Command.Group>
+						{/if}
 
 						{#if reconciliationState === 'reviewing' && proposedSource !== null}
 							<Command.Group value="review">
@@ -932,13 +1133,74 @@
 	</Dialog.Portal>
 </Dialog.Root>
 
+<Dialog.Root open={fileNameDialogOpen} onOpenChange={setFileNameDialogOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="file-dialog__overlay" />
+		<Dialog.Content class="file-dialog__content" onOpenAutoFocus={focusFileNameInput}>
+			<Dialog.Title class="file-dialog__title">
+				{fileNameDialogMode === 'new' ? 'New file' : 'Rename file'}
+			</Dialog.Title>
+			<Dialog.Description class="file-dialog__description">
+				{fileNameDialogMode === 'new'
+					? 'Create a blank intent and implementation workspace.'
+					: 'Choose a new name for this file.'}
+			</Dialog.Description>
+			<form class="file-dialog__form" onsubmit={submitFileName}>
+				<label for="file-name">Name</label>
+				<input
+					id="file-name"
+					bind:this={fileNameInputElement}
+					bind:value={fileNameInput}
+					maxlength="80"
+					autocomplete="off"
+					oninput={() => (fileNameError = '')}
+				/>
+				{#if fileNameError}
+					<p class="file-dialog__error" role="alert">{fileNameError}</p>
+				{/if}
+				<div class="file-dialog__actions">
+					<Dialog.Close class="file-dialog__button file-dialog__button--cancel" type="button">
+						Cancel
+					</Dialog.Close>
+					<button class="file-dialog__button file-dialog__button--primary" type="submit">
+						{fileNameDialogMode === 'new' ? 'Create file' : 'Rename'}
+					</button>
+				</div>
+			</form>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
+<AlertDialog.Root bind:open={deleteFileDialogOpen}>
+	<AlertDialog.Portal>
+		<AlertDialog.Overlay class="clear-dialog__overlay" />
+		<AlertDialog.Content class="clear-dialog__content">
+			<AlertDialog.Title class="clear-dialog__title">Delete “{activeFile?.name}”?</AlertDialog.Title>
+			<AlertDialog.Description class="clear-dialog__description">
+				This permanently removes this file’s intent, generated source, history, and highlighting.
+			</AlertDialog.Description>
+			<div class="clear-dialog__actions">
+				<AlertDialog.Cancel class="clear-dialog__button clear-dialog__button--cancel">
+					Cancel
+				</AlertDialog.Cancel>
+				<AlertDialog.Action
+					class="clear-dialog__button clear-dialog__button--danger"
+					onclick={deleteCurrentFile}
+				>
+					Delete file
+				</AlertDialog.Action>
+			</div>
+		</AlertDialog.Content>
+	</AlertDialog.Portal>
+</AlertDialog.Root>
+
 <AlertDialog.Root bind:open={clearDataDialogOpen}>
 	<AlertDialog.Portal>
 		<AlertDialog.Overlay class="clear-dialog__overlay" />
 		<AlertDialog.Content class="clear-dialog__content">
 			<AlertDialog.Title class="clear-dialog__title">Clear all saved data?</AlertDialog.Title>
 			<AlertDialog.Description class="clear-dialog__description">
-				This permanently removes the current intent, generated source, commit history, and saved
+				This permanently removes every file and its intents, generated sources, histories, and
 				highlighting from this browser.
 			</AlertDialog.Description>
 			<div class="clear-dialog__actions">
