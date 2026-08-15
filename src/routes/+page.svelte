@@ -77,12 +77,7 @@
 	let commitDisabled = $derived(
 		!dirty || reconciliationState === 'generating' || reconciliationState === 'reviewing'
 	);
-	let statusLabel = $derived.by(() => {
-		if (reconciliationState === 'generating') return 'Reconciling intent';
-		if (persistenceState === 'loading') return 'Loading draft';
-		if (persistenceState === 'error') return 'Storage unavailable';
-		return dirty ? 'Uncommitted changes' : 'Synchronized';
-	});
+	let intentChanges = $derived(summarizeIntentDiff(committedIntent, draftIntent));
 	let displayedSource = $derived(proposedSource ?? committedSource);
 	let sourceViewKey = $derived(`${proposedSource === null ? 'committed' : 'proposal'}:${displayedSource}`);
 
@@ -195,6 +190,22 @@
 		schedulePersistence();
 	}
 
+	function countChangedLines(text: string) {
+		if (!text) return 0;
+		const newlineCount = text.match(/\n/g)?.length ?? 0;
+		return newlineCount + (text.endsWith('\n') ? 0 : 1);
+	}
+
+	function summarizeIntentDiff(previous: string, next: string) {
+		return presentableDiff(previous, next, { timeout: 150 }).reduce(
+			(summary, change) => ({
+				additions: summary.additions + countChangedLines(next.slice(change.fromB, change.toB)),
+				removals: summary.removals + countChangedLines(previous.slice(change.fromA, change.toA))
+			}),
+			{ additions: 0, removals: 0 }
+		);
+	}
+
 	function formatIntentDiff(previous: string, next: string) {
 		return JSON.stringify(
 			presentableDiff(previous, next, { timeout: 150 }).map((change) => ({
@@ -281,12 +292,20 @@
 		reconciliationState = 'idle';
 	}
 
+	function handleSaveShortcut(event: KeyboardEvent) {
+		if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+
+		event.preventDefault();
+		if (!commitDisabled) void handleCommit();
+	}
+
 	onMount(() => {
 		const mediaQuery = window.matchMedia('(max-width: 48rem)');
 		const updateOrientation = () => (stacked = mediaQuery.matches);
 
 		updateOrientation();
 		mediaQuery.addEventListener('change', updateOrientation);
+		window.addEventListener('keydown', handleSaveShortcut);
 
 		void (async () => {
 			try {
@@ -339,6 +358,7 @@
 
 		return () => {
 			mediaQuery.removeEventListener('change', updateOrientation);
+			window.removeEventListener('keydown', handleSaveShortcut);
 			if (saveTimer) clearTimeout(saveTimer);
 		};
 	});
@@ -360,21 +380,11 @@
 			<IntentEditor value={draftIntent} onchange={handleIntentChange} />
 		</div>
 
-		<footer class="intent-status" aria-live="polite">
-			<div class="intent-status__state" data-state={dirty ? 'dirty' : 'clean'}>
-				<span class="intent-status__dot" aria-hidden="true"></span>
-				<span>{statusLabel}</span>
+		<footer class="intent-status">
+			<div class="intent-status__diff" aria-label={`${intentChanges.additions} additions, ${intentChanges.removals} removals`}>
+				<span class="intent-status__additions">+{intentChanges.additions}</span>
+				<span class="intent-status__removals">−{intentChanges.removals}</span>
 			</div>
-
-			<button
-				class="intent-status__commit"
-				class:intent-status__commit--ready={!commitDisabled}
-				type="button"
-				disabled={commitDisabled}
-				onclick={handleCommit}
-			>
-				{reconciliationState === 'generating' ? 'Reconciling…' : 'Commit'}
-			</button>
 		</footer>
 	</section>
 
@@ -464,11 +474,11 @@
 					{#if proposalAssumptions.length > 0}
 						<div class="proposal-review__assumptions">
 							<span>Assumptions</span>
-							<ul>
+							<ol>
 								{#each proposalAssumptions as assumption}
 									<li>{assumption}</li>
 								{/each}
-							</ul>
+							</ol>
 						</div>
 					{/if}
 				</div>
