@@ -73,6 +73,8 @@ Requirements for proposedSource:
 - Use named exports for operations the user may want to call.
 - Export main when the intent describes a runnable program.
 - Do not execute main automatically.
+- The names program and repl exist only in the interactive REPL. Never reference them inside proposedSource.
+- When one exported function calls another, reference the function directly by its local identifier.
 - Use browser-compatible JavaScript with no package imports.
 - Preserve useful existing behavior unless the intent removes or changes it.
 

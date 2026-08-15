@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { basicSetup, EditorView } from 'codemirror';
+	import { indentWithTab } from '@codemirror/commands';
+	import { keymap } from '@codemirror/view';
 	import { onMount } from 'svelte';
 
 	type Props = {
@@ -63,6 +65,7 @@
 			parent: host,
 			extensions: [
 				basicSetup,
+				keymap.of([indentWithTab]),
 				EditorView.lineWrapping,
 				EditorView.contentAttributes.of({ 'aria-label': 'Intent editor' }),
 				theme,

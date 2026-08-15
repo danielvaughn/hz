@@ -21,7 +21,14 @@
 		committedIntent: string;
 	};
 
-	type StoredProject = {
+	type CommitRecord = {
+		id: string;
+		createdAt: string;
+		intent: string;
+		source: string;
+	};
+
+	type StoredProjectV2 = {
 		version: 2;
 		draftIntent: string;
 		committedIntent: string;
@@ -31,6 +38,11 @@
 		proposalSummary: string;
 		proposalAssumptions: string[];
 		selectedOutputTab: OutputTab;
+	};
+
+	type StoredProject = Omit<StoredProjectV2, 'version'> & {
+		version: 3;
+		commits: CommitRecord[];
 	};
 
 	type ReconcileResponse = {
@@ -50,6 +62,7 @@
 	let proposalIntent = $state<string | null>(null);
 	let proposalSummary = $state('');
 	let proposalAssumptions = $state<string[]>([]);
+	let commits = $state<CommitRecord[]>([]);
 	let selectedOutputTab = $state<OutputTab>('source');
 	let persistenceState = $state<PersistenceState>('loading');
 	let reconciliationState = $state<ReconciliationState>('idle');
@@ -62,16 +75,12 @@
 
 	let dirty = $derived(draftIntent !== committedIntent);
 	let commitDisabled = $derived(
-		!hydrated ||
-		!dirty ||
-		persistenceState === 'error' ||
-		reconciliationState === 'generating'
+		!dirty || reconciliationState === 'generating' || reconciliationState === 'reviewing'
 	);
 	let statusLabel = $derived.by(() => {
 		if (reconciliationState === 'generating') return 'Reconciling intent';
 		if (persistenceState === 'loading') return 'Loading draft';
 		if (persistenceState === 'error') return 'Storage unavailable';
-		if (persistenceState === 'saving') return 'Saving draft';
 		return dirty ? 'Uncommitted changes' : 'Synchronized';
 	});
 	let displayedSource = $derived(proposedSource ?? committedSource);
@@ -138,7 +147,7 @@
 
 	function getProjectSnapshot(): StoredProject {
 		return {
-			version: 2,
+			version: 3,
 			draftIntent,
 			committedIntent,
 			committedSource,
@@ -146,6 +155,7 @@
 			proposalIntent,
 			proposalSummary,
 			proposalAssumptions: [...proposalAssumptions],
+			commits: commits.map((commit) => ({ ...commit })),
 			selectedOutputTab
 		};
 	}
@@ -246,6 +256,15 @@
 
 		committedIntent = proposalIntent;
 		committedSource = proposedSource;
+		commits = [
+			...commits,
+			{
+				id: crypto.randomUUID(),
+				createdAt: new Date().toISOString(),
+				intent: proposalIntent,
+				source: proposedSource
+			}
+		];
 		clearProposal();
 		reconciliationState = 'idle';
 		schedulePersistence();
@@ -274,8 +293,24 @@
 				const { default: localforage } = await import('localforage');
 				storage = localforage.createInstance({ name: 'hz', storeName: 'projects' });
 
-				const stored = await storage.getItem<StoredProject | StoredIntentV1>(STORAGE_KEY);
-				if (stored?.version === 2) {
+				const stored = await storage.getItem<StoredProject | StoredProjectV2 | StoredIntentV1>(
+					STORAGE_KEY
+				);
+				if (stored?.version === 3) {
+					committedIntent = stored.committedIntent;
+					committedSource = stored.committedSource;
+					commits = stored.commits;
+					selectedOutputTab = stored.selectedOutputTab;
+
+					if (!editedBeforeHydration) {
+						draftIntent = stored.draftIntent;
+						proposedSource = stored.proposedSource;
+						proposalIntent = stored.proposalIntent;
+						proposalSummary = stored.proposalSummary;
+						proposalAssumptions = stored.proposalAssumptions;
+						reconciliationState = stored.proposedSource ? 'reviewing' : 'idle';
+					}
+				} else if (stored?.version === 2) {
 					committedIntent = stored.committedIntent;
 					committedSource = stored.committedSource;
 					selectedOutputTab = stored.selectedOutputTab;

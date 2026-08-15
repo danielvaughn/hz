@@ -81,6 +81,7 @@ async function loadProgram(source: string) {
 
 	try {
 		program = (await import(/* @vite-ignore */ moduleUrl)) as Program;
+		Object.assign(globalThis, { program, repl });
 		send({ type: 'loaded', exports: Object.keys(program).sort() });
 	} catch (error) {
 		program = null;
