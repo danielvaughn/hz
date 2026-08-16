@@ -170,8 +170,8 @@
 		if (reconciliationState === 'reviewing') return { kind: 'review', message: 'Implementation ready for review' };
 		if (persistenceState === 'loading') return { kind: 'neutral', message: 'Loading saved project' };
 		if (persistenceState === 'saving') return { kind: 'working', message: 'Saving draft' };
-		if (dirty) return { kind: 'dirty', message: 'Intent has uncommitted changes' };
-		return { kind: 'clean', message: 'Intent and implementation are synchronized' };
+		if (dirty) return { kind: 'dirty', message: 'Spec has uncommitted changes' };
+		return { kind: 'clean', message: 'Spec and implementation are synchronized' };
 	});
 
 	function clamp(value: number) {
@@ -930,7 +930,7 @@
 	style={`--split: ${split}%`}
 	aria-label="hz workspace"
 >
-	<section class="workspace__pane workspace__pane--intent" aria-label="Intent workspace">
+	<section class="workspace__pane workspace__pane--intent" aria-label="Spec workspace">
 		<header class="file-toolbar" aria-label="File controls">
 			<div class="file-toolbar__identity">
 				<FileText class="file-toolbar__file-icon" size={14} strokeWidth={1.6} aria-hidden="true" />
@@ -976,7 +976,7 @@
 					type="button"
 					disabled={commitDisabled}
 					onclick={handleCommit}
-					title="Synchronize intent (⌘S)"
+					title="Synchronize spec (⌘S)"
 				>
 					<RefreshCw size={13} strokeWidth={1.7} aria-hidden="true" />
 					<span>Sync</span>
@@ -1117,7 +1117,7 @@
 							</button>
 						{:else}
 							<span>No generated source yet</span>
-							<small>Synchronize an intent to create the first implementation.</small>
+							<small>Synchronize a spec to create the first implementation.</small>
 						{/if}
 					</div>
 				{/if}
@@ -1360,7 +1360,7 @@
 			</Dialog.Title>
 			<Dialog.Description class="file-dialog__description">
 				{fileNameDialogMode === 'new'
-					? 'Create a blank intent and implementation workspace.'
+					? 'Create a blank spec and implementation workspace.'
 					: 'Choose a new name for this file.'}
 			</Dialog.Description>
 			<form class="file-dialog__form" onsubmit={submitFileName}>
@@ -1425,7 +1425,7 @@
 		<AlertDialog.Content class="clear-dialog__content">
 			<AlertDialog.Title class="clear-dialog__title">Delete “{activeFile?.name}”?</AlertDialog.Title>
 			<AlertDialog.Description class="clear-dialog__description">
-				This permanently removes this file’s intent, generated source, history, and highlighting.
+				This permanently removes this file’s spec, generated source, history, and highlighting.
 			</AlertDialog.Description>
 			<div class="clear-dialog__actions">
 				<AlertDialog.Cancel class="clear-dialog__button clear-dialog__button--cancel">
@@ -1448,7 +1448,7 @@
 		<AlertDialog.Content class="clear-dialog__content">
 			<AlertDialog.Title class="clear-dialog__title">Clear all saved data?</AlertDialog.Title>
 			<AlertDialog.Description class="clear-dialog__description">
-				This permanently removes every file and its intents, generated sources, histories, and
+				This permanently removes every file and its specs, generated sources, histories, and
 				highlighting from this browser.
 			</AlertDialog.Description>
 			<div class="clear-dialog__actions">

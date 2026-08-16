@@ -311,7 +311,7 @@
 					indentWithTab
 				]),
 				EditorView.lineWrapping,
-				EditorView.contentAttributes.of({ 'aria-label': 'Intent editor' }),
+				EditorView.contentAttributes.of({ 'aria-label': 'Spec editor' }),
 				highlightField,
 				theme,
 				EditorView.updateListener.of((update) => {

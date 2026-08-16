@@ -14,5 +14,5 @@ export const WELCOME_COPY = {
 	description:
 		'To your left is some pseudocode - change it however you like. When you press the sync button, we\'ll produce real code from it.',
 	replHint:
-		'The implementation is live. Run the prepared expression below, then revise the intent and synchronize again.'
+		'The implementation is live. Run the prepared expression below, then revise the spec and synchronize again.'
 } as const;
