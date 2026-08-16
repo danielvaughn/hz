@@ -7,7 +7,7 @@ export const WELCOME_INTENT = `fizz-buzz(n)
     by 5 ? "buzz"
     both ? "fizz buzz"`;
 
-export const WELCOME_REPL_COMMAND = 'program.fizzBuzz(20)';
+export const WELCOME_REPL_COMMAND = 'fizzBuzz(20)';
 
 export const WELCOME_COPY = {
 	title: 'WELCOME TO HUZZAH',

@@ -5,7 +5,7 @@ export type ReplWorkerRequest =
 	| { type: 'execute'; id: string; code: string };
 
 export type ReplWorkerResponse =
-	| { type: 'loaded'; exports: string[] }
+	| { type: 'loaded'; exports: string[]; bareExports: string[] }
 	| { type: 'scope'; replKeys: string[] }
 	| { type: 'load-error'; message: string }
 	| { type: 'console'; id: string | null; level: ConsoleLevel; text: string }

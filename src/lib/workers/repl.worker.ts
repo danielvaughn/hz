@@ -11,11 +11,23 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
 ) => (...args: unknown[]) => Promise<unknown>;
 
 let program: Program | null = null;
+let bareExportNames: string[] = [];
 const repl: Record<string, unknown> = {};
 let activeRequestId: string | null = null;
 
 function send(message: ReplWorkerResponse) {
 	self.postMessage(message);
+}
+
+function canBindBareExport(name: string) {
+	if (name === 'program' || name === 'repl' || !/^[A-Za-z_$][\w$]*$/.test(name)) return false;
+
+	try {
+		new AsyncFunction(name, '"use strict";');
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function formatValue(value: unknown, depth = 0, seen = new WeakSet<object>()): string {
@@ -77,14 +89,18 @@ for (const level of ['log', 'info', 'warn', 'error'] as const satisfies readonly
 
 async function loadProgram(source: string) {
 	activeRequestId = null;
+	bareExportNames = [];
 	const moduleUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
 
 	try {
 		program = (await import(/* @vite-ignore */ moduleUrl)) as Program;
+		const exports = Object.keys(program).sort();
+		bareExportNames = exports.filter(canBindBareExport);
 		Object.assign(globalThis, { program, repl });
-		send({ type: 'loaded', exports: Object.keys(program).sort() });
+		send({ type: 'loaded', exports, bareExports: bareExportNames });
 	} catch (error) {
 		program = null;
+		bareExportNames = [];
 		send({
 			type: 'load-error',
 			message: error instanceof Error ? error.stack || error.message : String(error)
@@ -104,15 +120,17 @@ async function execute(id: string, code: string) {
 
 	try {
 		let evaluate: (...args: unknown[]) => Promise<unknown>;
+		const parameterNames = ['program', 'repl', ...bareExportNames];
+		const parameterValues = [program, repl, ...bareExportNames.map((name) => program?.[name])];
 
 		try {
-			evaluate = new AsyncFunction('program', 'repl', `"use strict"; return (${code}\n);`);
+			evaluate = new AsyncFunction(...parameterNames, `"use strict"; return (${code}\n);`);
 		} catch (error) {
 			if (!(error instanceof SyntaxError)) throw error;
-			evaluate = new AsyncFunction('program', 'repl', `"use strict"; ${code}`);
+			evaluate = new AsyncFunction(...parameterNames, `"use strict"; ${code}`);
 		}
 
-		const result = await evaluate(program, repl);
+		const result = await evaluate(...parameterValues);
 		send({ type: 'result', id, text: formatValue(result) });
 	} catch (error) {
 		send({

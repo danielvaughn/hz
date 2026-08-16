@@ -5,7 +5,7 @@
 	import { onMount, tick } from 'svelte';
 
 	const EXECUTION_TIMEOUT = 5_000;
-	const DEFAULT_COMMAND = 'program.main()';
+	const DEFAULT_COMMAND = 'main()';
 
 	type EntryKind = 'input' | 'result' | 'console' | 'error';
 
@@ -33,6 +33,7 @@
 	let history = $state<string[]>([]);
 	let historyIndex = $state(0);
 	let programExports = $state<string[]>([]);
+	let bareProgramExports = $state<string[]>([]);
 	let replKeys = $state<string[]>([]);
 	let ready = $state(false);
 	let busy = $state(false);
@@ -68,6 +69,7 @@
 				loading = false;
 				ready = true;
 				programExports = message.exports;
+				bareProgramExports = message.bareExports;
 				if (initialCommand && !command && entries.length === 0) command = initialCommand;
 				void tick().then(() => commandInput?.focus());
 				break;
@@ -107,6 +109,7 @@
 		ready = false;
 		entries = [];
 		programExports = [];
+		bareProgramExports = [];
 		replKeys = [];
 
 		if (!nextSource.trim()) return;
@@ -264,6 +267,7 @@
 			disabled={!ready || busy}
 			defaultValue={source.trim() ? DEFAULT_COMMAND : ''}
 			{programExports}
+			{bareProgramExports}
 			{replKeys}
 			onchange={(value) => (command = value)}
 			onsubmit={execute}

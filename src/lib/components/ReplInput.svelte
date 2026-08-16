@@ -22,6 +22,7 @@
 		placeholder: string;
 		defaultValue: string;
 		programExports: string[];
+		bareProgramExports: string[];
 		replKeys: string[];
 		onchange: (value: string) => void;
 		onsubmit: () => void;
@@ -35,6 +36,7 @@
 		placeholder,
 		defaultValue,
 		programExports,
+		bareProgramExports,
 		replKeys,
 		onchange,
 		onsubmit,
@@ -76,6 +78,7 @@
 		return {
 			from: topLevel.from,
 			options: [
+				...uniqueOptions(bareProgramExports),
 				{ label: 'program', type: 'variable', detail: 'module exports' },
 				{ label: 'repl', type: 'variable', detail: 'session state' }
 			],
