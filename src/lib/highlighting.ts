@@ -1,3 +1,5 @@
+import type { InferenceModel, InferenceUsage } from '$lib/inference';
+
 export const HIGHLIGHT_TAXONOMY_VERSION = 1;
 
 export const HIGHLIGHT_CATEGORIES = [
@@ -37,6 +39,8 @@ export type PersistedHighlighting = {
 
 export type HighlightResponse = {
 	marks: HighlightMark[];
+	model: InferenceModel;
+	usage: InferenceUsage;
 };
 
 export function isHighlightCategory(value: unknown): value is HighlightCategory {

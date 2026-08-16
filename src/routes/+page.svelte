@@ -3,6 +3,7 @@
 	import Repl from '$lib/components/Repl.svelte';
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import type { PersistedHighlighting } from '$lib/highlighting';
+	import type { InferenceModel, InferenceUsage } from '$lib/inference';
 	import {
 		cloneIntentSourceMap,
 		generatedRangesForIntentLine,
@@ -59,6 +60,8 @@
 		proposalIntent: string | null;
 		proposalSummary: string;
 		proposalAssumptions: string[];
+		proposalModel?: InferenceModel | null;
+		proposalUsage?: InferenceUsage | null;
 		commits: CommitRecord[];
 		highlighting: PersistedHighlighting | null;
 		selectedOutputTab: OutputTab;
@@ -86,6 +89,8 @@
 		summary: string;
 		assumptions: string[];
 		sourceMap: IntentSourceMap;
+		model: InferenceModel;
+		usage: InferenceUsage;
 	};
 
 	let workspace: HTMLElement;
@@ -106,6 +111,8 @@
 	let proposalIntent = $state<string | null>(null);
 	let proposalSummary = $state('');
 	let proposalAssumptions = $state<string[]>([]);
+	let proposalModel = $state<InferenceModel | null>(null);
+	let proposalUsage = $state<InferenceUsage | null>(null);
 	let commits = $state<CommitRecord[]>([]);
 	let intentHighlighting = $state<PersistedHighlighting | null | undefined>(undefined);
 	let selectedOutputTab = $state<OutputTab>('source');
@@ -309,6 +316,8 @@
 			proposalIntent,
 			proposalSummary,
 			proposalAssumptions: [...proposalAssumptions],
+			proposalModel: proposalModel ? { ...proposalModel } : null,
+			proposalUsage: cloneInferenceUsage(proposalUsage),
 			commits: commits.map((commit) => ({ ...commit })),
 			highlighting,
 			selectedOutputTab
@@ -327,6 +336,8 @@
 			proposalIntent: null,
 			proposalSummary: '',
 			proposalAssumptions: [],
+			proposalModel: null,
+			proposalUsage: null,
 			commits: [],
 			highlighting: null,
 			selectedOutputTab: 'source'
@@ -357,6 +368,8 @@
 			proposalIntent: project.proposalIntent,
 			proposalSummary: project.proposalSummary,
 			proposalAssumptions: [...project.proposalAssumptions],
+			proposalModel: project.proposalModel ? { ...project.proposalModel } : null,
+			proposalUsage: cloneInferenceUsage(project.proposalUsage),
 			commits: project.commits.map((commit) => ({ ...commit })),
 			highlighting: project.highlighting
 				? {
@@ -381,6 +394,8 @@
 		proposalIntent = project.proposalIntent;
 		proposalSummary = project.proposalSummary;
 		proposalAssumptions = [...project.proposalAssumptions];
+		proposalModel = project.proposalModel ? { ...project.proposalModel } : null;
+		proposalUsage = cloneInferenceUsage(project.proposalUsage);
 		commits = project.commits.map((commit) => ({ ...commit }));
 		intentHighlighting = project.highlighting;
 		selectedOutputTab = project.selectedOutputTab;
@@ -677,6 +692,27 @@
 		return newlineCount + (text.endsWith('\n') ? 0 : 1);
 	}
 
+	function cloneInferenceUsage(usage: InferenceUsage | null | undefined): InferenceUsage | null {
+		if (!usage) return null;
+		return {
+			tokens: {
+				total: usage.tokens.total,
+				input: usage.tokens.input,
+				output: usage.tokens.output
+			},
+			estimatedCostUsd: usage.estimatedCostUsd
+		};
+	}
+
+	function formatTokenCount(tokens: number) {
+		return new Intl.NumberFormat().format(tokens);
+	}
+
+	function formatEstimatedCost(cost: number) {
+		const fractionDigits = cost < 0.01 ? 4 : cost < 1 ? 3 : 2;
+		return `$${cost.toFixed(fractionDigits)}`;
+	}
+
 	function summarizeIntentDiff(previous: string, next: string) {
 		return presentableDiff(previous, next, { timeout: 150 }).reduce(
 			(summary, change) => ({
@@ -781,6 +817,8 @@
 			proposalIntent = nextIntent;
 			proposalSummary = result.summary;
 			proposalAssumptions = result.assumptions;
+			proposalModel = { ...result.model };
+			proposalUsage = cloneInferenceUsage(result.usage);
 			await schedulePersistence('immediate');
 			reconciliationState = 'reviewing';
 		} catch (error) {
@@ -796,6 +834,8 @@
 		proposalIntent = null;
 		proposalSummary = '';
 		proposalAssumptions = [];
+		proposalModel = null;
+		proposalUsage = null;
 	}
 
 	function acceptProposal() {
@@ -1161,10 +1201,35 @@
 					onkeydown={handleReviewResizeKeydown}
 				></button>
 				<div class="proposal-review__copy">
+					{#if proposalModel}
+						<dl class="proposal-review__inference">
+							<div>
+								<dt class="proposal-review__label">Model</dt>
+								<dd><code>{proposalModel.provider}/{proposalModel.id}</code></dd>
+							</div>
+							{#if proposalUsage}
+								<div>
+									<dt class="proposal-review__label">Tokens</dt>
+									<dd>
+										{formatTokenCount(proposalUsage.tokens.total)} ({formatTokenCount(
+											proposalUsage.tokens.input
+										)} input, {formatTokenCount(proposalUsage.tokens.output)} output)
+									</dd>
+								</div>
+								<div
+									title="Pi's model-pricing estimate; your provider's actual billing may differ."
+								>
+									<dt class="proposal-review__label">Est. cost</dt>
+									<dd>{formatEstimatedCost(proposalUsage.estimatedCostUsd)} USD</dd>
+								</div>
+							{/if}
+						</dl>
+					{/if}
+					<span class="proposal-review__label proposal-review__description-label">Description</span>
 					<p>{proposalSummary}</p>
 					{#if proposalAssumptions.length > 0}
 						<div class="proposal-review__assumptions">
-							<span>Assumptions</span>
+							<span class="proposal-review__label">Assumptions</span>
 							<ol>
 								{#each proposalAssumptions as assumption}
 									<li>{assumption}</li>

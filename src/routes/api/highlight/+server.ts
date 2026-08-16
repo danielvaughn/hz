@@ -13,6 +13,7 @@ import {
 	isHighlightCategory,
 	mergeHighlightRanges
 } from '$lib/highlighting';
+import { inferenceDetails } from '$lib/server/inference';
 import type { RequestHandler } from './$types';
 
 const MAX_REQUEST_BYTES = 1_100_000;
@@ -249,7 +250,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		const output = session.getLastAssistantText();
 		if (!output) throw new InvalidModelResponseError('The highlighter returned no response.');
 
-		return json({ marks: parseResponse(output, body) }, { headers: { 'cache-control': 'no-store' } });
+		return json(
+			{ marks: parseResponse(output, body), ...inferenceDetails(session) },
+			{ headers: { 'cache-control': 'no-store' } }
+		);
 	} catch (error) {
 		if (error instanceof HighlightTimeoutError) return errorResponse(error.message, 504);
 		if (error instanceof InvalidModelResponseError) return errorResponse(error.message, 502);

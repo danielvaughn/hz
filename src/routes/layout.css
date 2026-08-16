@@ -1003,23 +1003,67 @@ select {
 
 .proposal-review__copy p {
 	margin: 0;
-	color: #a9a59e;
+	color: #fff;
 	font-size: 0.8125rem;
 	line-height: 1.7;
 }
 
-.proposal-review__assumptions {
-	margin-top: 0.75rem;
+.proposal-review__inference {
+	display: flex;
+	align-items: flex-start;
+	gap: 1.5rem;
+	margin-bottom: 1rem;
+	margin-top: 0;
+	text-transform: none;
 }
 
-.proposal-review__assumptions > span {
+.proposal-review__label {
 	display: block;
-	margin-bottom: 0.375rem;
 	color: #746e64;
 	font-size: 0.625rem;
 	font-weight: 600;
 	letter-spacing: 0.065em;
 	text-transform: uppercase;
+}
+
+.proposal-review__inference > div {
+	display: grid;
+	gap: 0.25rem;
+	min-width: 0;
+}
+
+.proposal-review__inference dt,
+.proposal-review__inference dd {
+	margin: 0;
+}
+
+.proposal-review__inference dt {
+	line-height: 1;
+}
+
+.proposal-review__description-label {
+	margin-bottom: 0.1875rem;
+}
+
+.proposal-review__inference dd {
+	color: #c2beb6;
+	font-size: 0.6875rem;
+	font-weight: 400;
+	letter-spacing: 0;
+	text-transform: none;
+}
+
+.proposal-review__inference code {
+	color: inherit;
+	font-family: var(--font-mono);
+}
+
+.proposal-review__assumptions {
+	margin-top: 1rem;
+}
+
+.proposal-review__assumptions > .proposal-review__label {
+	margin-bottom: 0.375rem;
 }
 
 .proposal-review__assumptions ol {
@@ -1029,7 +1073,7 @@ select {
 	padding: 0;
 	counter-reset: assumption;
 	list-style: none;
-	color: #817d76;
+	color: #c2beb6;
 	font-size: 0.75rem;
 	line-height: 1.6;
 }

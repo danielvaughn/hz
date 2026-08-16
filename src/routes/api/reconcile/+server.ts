@@ -10,6 +10,7 @@ import {
 	uncoveredIntentLines,
 	type IntentSourceMap
 } from '$lib/source-maps';
+import { inferenceDetails } from '$lib/server/inference';
 
 import type { RequestHandler } from './$types';
 
@@ -328,6 +329,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		);
 
 		const { response: result, sourceMapWarnings } = parseResponse(output, body.nextIntent);
+		const { model, usage } = inferenceDetails(session);
 		if (sourceMapWarnings.length > 0) {
 			console.warn(`[reconcile:${requestId}] source map accepted with warnings`, sourceMapWarnings);
 		}
@@ -342,10 +344,12 @@ export const POST: RequestHandler = async ({ request }) => {
 				0
 			),
 			assumptions: result.assumptions.length,
+			model,
+			usage,
 			sourceMapWarnings: sourceMapWarnings.length
 		});
 
-		return json(result, {
+		return json({ ...result, model, usage }, {
 			headers: { 'cache-control': 'no-store', 'x-reconciliation-id': requestId }
 		});
 	} catch (error) {
