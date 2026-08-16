@@ -4,6 +4,11 @@
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import type { PersistedHighlighting } from '$lib/highlighting';
 	import {
+		cloneIntentSourceMap,
+		generatedRangesForIntentLine,
+		type IntentSourceMap
+	} from '$lib/source-maps';
+	import {
 		WELCOME_COPY,
 		WELCOME_FILE_NAME,
 		WELCOME_INTENT,
@@ -44,11 +49,13 @@
 	};
 
 	type StoredProject = {
-		version: 4;
+		version: 5;
 		draftIntent: string;
 		committedIntent: string;
 		committedSource: string;
+		committedSourceMap: IntentSourceMap | null;
 		proposedSource: string | null;
+		proposedSourceMap: IntentSourceMap | null;
 		proposalIntent: string | null;
 		proposalSummary: string;
 		proposalAssumptions: string[];
@@ -78,6 +85,7 @@
 		proposedSource: string;
 		summary: string;
 		assumptions: string[];
+		sourceMap: IntentSourceMap;
 	};
 
 	let workspace: HTMLElement;
@@ -92,7 +100,9 @@
 	let draftIntent = $state('');
 	let committedIntent = $state('');
 	let committedSource = $state('');
+	let committedSourceMap = $state<IntentSourceMap | null>(null);
 	let proposedSource = $state<string | null>(null);
+	let proposedSourceMap = $state<IntentSourceMap | null>(null);
 	let proposalIntent = $state<string | null>(null);
 	let proposalSummary = $state('');
 	let proposalAssumptions = $state<string[]>([]);
@@ -115,6 +125,8 @@
 	let activeFileId = $state('');
 	let reconciliationState = $state<ReconciliationState>('idle');
 	let reconciliationError = $state('');
+	let sourceMapMode = $state(false);
+	let selectedIntentLine = $state(1);
 	let synchronizationProgress = $state(0);
 	let synchronizationFinishing = $state(false);
 	let storage: LocalForage | undefined;
@@ -138,6 +150,13 @@
 	let activeFile = $derived(files.find((file) => file.id === activeFileId));
 	let intentChanges = $derived(summarizeIntentDiff(committedIntent, draftIntent));
 	let displayedSource = $derived(proposedSource ?? committedSource);
+	let displayedSourceMap = $derived(proposedSource === null ? committedSourceMap : proposedSourceMap);
+	let displayedMapIntent = $derived(proposedSource === null ? committedIntent : proposalIntent);
+	let highlightedSourceRanges = $derived(
+		sourceMapMode && displayedMapIntent === draftIntent
+			? generatedRangesForIntentLine(displayedSourceMap, selectedIntentLine)
+			: []
+	);
 	let sourceViewKey = $derived(`${proposedSource === null ? 'committed' : 'proposal'}:${displayedSource}`);
 	let isWelcomeFile = $derived(activeFile?.welcome === true);
 	let isWelcomeStart = $derived(isWelcomeFile && commits.length === 0 && !committedSource);
@@ -280,11 +299,13 @@
 			: null;
 
 		return {
-			version: 4,
+			version: 5,
 			draftIntent,
 			committedIntent,
 			committedSource,
+			committedSourceMap: cloneIntentSourceMap(committedSourceMap),
 			proposedSource,
+			proposedSourceMap: cloneIntentSourceMap(proposedSourceMap),
 			proposalIntent,
 			proposalSummary,
 			proposalAssumptions: [...proposalAssumptions],
@@ -296,11 +317,13 @@
 
 	function emptyProject(draft = ''): StoredProject {
 		return {
-			version: 4,
+			version: 5,
 			draftIntent: draft,
 			committedIntent: '',
 			committedSource: '',
+			committedSourceMap: null,
 			proposedSource: null,
+			proposedSourceMap: null,
 			proposalIntent: null,
 			proposalSummary: '',
 			proposalAssumptions: [],
@@ -324,11 +347,13 @@
 
 	function cloneProject(project: StoredProject): StoredProject {
 		return {
-			version: 4,
+			version: 5,
 			draftIntent: project.draftIntent,
 			committedIntent: project.committedIntent,
 			committedSource: project.committedSource,
+			committedSourceMap: cloneIntentSourceMap(project.committedSourceMap ?? null),
 			proposedSource: project.proposedSource,
+			proposedSourceMap: cloneIntentSourceMap(project.proposedSourceMap ?? null),
 			proposalIntent: project.proposalIntent,
 			proposalSummary: project.proposalSummary,
 			proposalAssumptions: [...project.proposalAssumptions],
@@ -350,7 +375,9 @@
 		draftIntent = project.draftIntent;
 		committedIntent = project.committedIntent;
 		committedSource = project.committedSource;
+		committedSourceMap = cloneIntentSourceMap(project.committedSourceMap ?? null);
 		proposedSource = project.proposedSource;
+		proposedSourceMap = cloneIntentSourceMap(project.proposedSourceMap ?? null);
 		proposalIntent = project.proposalIntent;
 		proposalSummary = project.proposalSummary;
 		proposalAssumptions = [...project.proposalAssumptions];
@@ -360,6 +387,8 @@
 		reconciliationState = project.proposedSource ? 'reviewing' : 'idle';
 		reconciliationError = '';
 		reviewHeight = null;
+		sourceMapMode = false;
+		selectedIntentLine = 1;
 	}
 
 	function getWorkspaceSnapshot(activeId = activeFileId): StoredWorkspace {
@@ -438,6 +467,11 @@
 		if (selectedOutputTab === tab) return;
 		selectedOutputTab = tab;
 		schedulePersistence();
+	}
+
+	function toggleSourceMapMode() {
+		sourceMapMode = !sourceMapMode;
+		if (sourceMapMode) selectedOutputTab = 'source';
 	}
 
 	function requestClearSavedData() {
@@ -743,6 +777,7 @@
 			await highlightingPromise;
 			await finishSynchronizationProgress();
 			proposedSource = result.proposedSource;
+			proposedSourceMap = cloneIntentSourceMap(result.sourceMap);
 			proposalIntent = nextIntent;
 			proposalSummary = result.summary;
 			proposalAssumptions = result.assumptions;
@@ -757,6 +792,7 @@
 
 	function clearProposal() {
 		proposedSource = null;
+		proposedSourceMap = null;
 		proposalIntent = null;
 		proposalSummary = '';
 		proposalAssumptions = [];
@@ -768,6 +804,7 @@
 
 		committedIntent = proposalIntent;
 		committedSource = proposedSource;
+		committedSourceMap = cloneIntentSourceMap(proposedSourceMap);
 		commits = [
 			...commits,
 			{
@@ -955,6 +992,8 @@
 					highlighting={intentHighlighting}
 					onchange={handleIntentChange}
 					onhighlightingchange={handleHighlightingChange}
+					ontogglesourcemap={toggleSourceMapMode}
+					onintentlinechange={(line) => (selectedIntentLine = line)}
 				/>
 			{/key}
 		</div>
@@ -982,6 +1021,16 @@
 				</div>
 			</div>
 			<div class="intent-status__actions">
+				<button
+					class:intent-status__source-map--active={sourceMapMode}
+					class="intent-status__source-map"
+					type="button"
+					aria-pressed={sourceMapMode}
+					title="Toggle source map highlighting (.)"
+					onclick={toggleSourceMapMode}
+				>
+					Source map <kbd>.</kbd>
+				</button>
 				<button
 					class="intent-status__command"
 					type="button"
@@ -1062,7 +1111,11 @@
 					</div>
 				{:else if displayedSource}
 					{#key sourceViewKey}
-						<SourceViewer source={displayedSource} original={proposedSource === null ? null : committedSource} />
+						<SourceViewer
+							source={displayedSource}
+							original={proposedSource === null ? null : committedSource}
+							highlightedRanges={highlightedSourceRanges}
+						/>
 					{/key}
 				{:else}
 					<div class:output-empty--welcome={isWelcomeStart} class="output-empty">

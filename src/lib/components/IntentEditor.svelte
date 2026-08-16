@@ -29,9 +29,18 @@
 		highlighting?: PersistedHighlighting | null;
 		onchange: (value: string) => void;
 		onhighlightingchange: (highlighting: PersistedHighlighting, persistImmediately?: boolean) => void;
+		ontogglesourcemap: () => void;
+		onintentlinechange: (line: number) => void;
 	};
 
-	let { value, highlighting, onchange, onhighlightingchange }: Props = $props();
+	let {
+		value,
+		highlighting,
+		onchange,
+		onhighlightingchange,
+		ontogglesourcemap,
+		onintentlinechange
+	}: Props = $props();
 	let host: HTMLDivElement;
 	let view = $state.raw<EditorView>();
 	let applyingExternalValue = false;
@@ -291,12 +300,24 @@
 				basicSetup,
 				indentUnit.of('    '),
 				EditorState.tabSize.of(4),
-				keymap.of([indentWithTab]),
+				keymap.of([
+					{
+						key: '.',
+						run: () => {
+							ontogglesourcemap();
+							return true;
+						}
+					},
+					indentWithTab
+				]),
 				EditorView.lineWrapping,
 				EditorView.contentAttributes.of({ 'aria-label': 'Intent editor' }),
 				highlightField,
 				theme,
 				EditorView.updateListener.of((update) => {
+					if (update.selectionSet || update.docChanged) {
+						onintentlinechange(update.state.doc.lineAt(update.state.selection.main.head).number);
+					}
 					if (!update.docChanged || applyingExternalValue) return;
 
 					dirtyRanges = mapDirtyRanges(dirtyRanges, update.changes, update.state.doc);
@@ -306,6 +327,7 @@
 				})
 			]
 		});
+		onintentlinechange(view.state.doc.lineAt(view.state.selection.main.head).number);
 
 		return () => {
 			stopPendingHighlight();
