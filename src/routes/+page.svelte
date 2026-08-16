@@ -1022,16 +1022,6 @@
 			</div>
 			<div class="intent-status__actions">
 				<button
-					class:intent-status__source-map--active={sourceMapMode}
-					class="intent-status__source-map"
-					type="button"
-					aria-pressed={sourceMapMode}
-					title="Toggle source map highlighting (.)"
-					onclick={toggleSourceMapMode}
-				>
-					Source map <kbd>.</kbd>
-				</button>
-				<button
 					class="intent-status__command"
 					type="button"
 					title="Open command menu (⌘K)"
@@ -1246,8 +1236,17 @@
 									onSelect={() =>
 										runCommand(() => intentEditor?.generateHighlighting(true) ?? Promise.resolve())}
 								>
-									<span>Rehighlight</span>
+									<span>Highlight</span>
 									<kbd>⌘⇧H</kbd>
+								</Command.Item>
+								<Command.Item
+									class="command-menu__item"
+									value="toggle-source-map"
+									keywords={['source', 'map', 'mapping', 'highlight', 'generated']}
+									onSelect={() => runCommand(toggleSourceMapMode)}
+								>
+									<span>{sourceMapMode ? 'Disable source map' : 'Enable source map'}</span>
+									<kbd>.</kbd>
 								</Command.Item>
 							</Command.GroupItems>
 						</Command.Group>

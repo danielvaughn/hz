@@ -269,37 +269,6 @@ select {
 	cursor: pointer;
 }
 
-.intent-status__source-map {
-	padding: 0;
-	border: 0;
-	background: transparent;
-	color: #6f6b65;
-	font-size: inherit;
-	letter-spacing: inherit;
-	cursor: pointer;
-}
-
-.intent-status__source-map:hover,
-.intent-status__source-map:focus-visible,
-.intent-status__source-map--active {
-	color: #d9a66c;
-}
-
-.intent-status__source-map:focus-visible {
-	outline: 1px solid rgba(217, 166, 108, 0.55);
-	outline-offset: 0.25rem;
-}
-
-.intent-status__source-map kbd {
-	margin-left: 0.25rem;
-	font-family: inherit;
-	color: #55524d;
-}
-
-.intent-status__source-map--active kbd {
-	color: #b88b59;
-}
-
 .intent-status__command:hover,
 .intent-status__command:focus-visible {
 	color: #d6d3d1;
