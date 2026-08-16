@@ -845,26 +845,22 @@ select {
 }
 
 .output-empty--welcome strong {
-	margin-top: 0.625rem;
-	color: #c9c5be;
-	font-size: 0.9375rem;
+	color: #716e68;
+	font-family: var(--font-mono);
+	font-size: 0.625rem;
 	font-weight: 600;
-	letter-spacing: -0.015em;
+	letter-spacing: 0.12em;
+	text-wrap: balance;
 }
 
 .output-empty--welcome small {
 	max-width: 24rem;
 	margin-top: 0.75rem;
-	color: #716e68;
-}
-
-.output-empty__eyebrow {
-	color: #8b806e;
-	font-family: var(--font-mono);
-	font-size: 0.625rem;
-	font-weight: 600;
-	letter-spacing: 0.12em;
-	text-transform: uppercase;
+	color: #c9c5be;
+	font-size: 0.875rem;
+	font-weight: 400;
+	line-height: 1.65;
+	text-wrap: pretty;
 }
 
 .output-empty--welcome button {

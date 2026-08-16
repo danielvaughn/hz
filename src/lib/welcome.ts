@@ -10,9 +10,9 @@ export const WELCOME_INTENT = `fizz-buzz(n)
 export const WELCOME_REPL_COMMAND = 'program.fizzBuzz(20)';
 
 export const WELCOME_COPY = {
-	title: 'Start with FizzBuzz',
+	title: 'WELCOME TO HUZZAH',
 	description:
-		'The intent is already written on the left. Read it, change anything you like, then synchronize it into a working program.',
+		'To your left is some pseudocode - change it however you like. When you press the sync button, we\'ll produce real code from it.',
 	replHint:
 		'The implementation is live. Run the prepared expression below, then revise the intent and synchronize again.'
 } as const;

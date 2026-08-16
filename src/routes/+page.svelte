@@ -1110,11 +1110,10 @@
 				{:else}
 					<div class:output-empty--welcome={isWelcomeStart} class="output-empty">
 						{#if isWelcomeStart}
-							<span class="output-empty__eyebrow">Welcome to hz</span>
 							<strong>{WELCOME_COPY.title}</strong>
 							<small>{WELCOME_COPY.description}</small>
 							<button type="button" disabled={commitDisabled} onclick={handleCommit}>
-								Synchronize intent
+								Sync
 							</button>
 						{:else}
 							<span>No generated source yet</span>
