@@ -1049,11 +1049,18 @@ select {
 .synchronization {
 	display: flex;
 	flex-direction: column;
-	align-items: stretch;
 	justify-content: center;
-	width: min(18rem, 58%);
+	gap: 0.875rem;
+	width: min(26rem, 72%);
 	height: 100%;
 	margin: 0 auto;
+}
+
+.synchronization__row {
+	display: grid;
+	grid-template-columns: 8.75rem minmax(0, 1fr);
+	align-items: center;
+	gap: 1rem;
 }
 
 .synchronization__track {
@@ -1066,8 +1073,8 @@ select {
 .synchronization__fill {
 	display: block;
 	height: 100%;
-	background: #b8aa91;
-	box-shadow: 0 0 0.5rem rgba(184, 170, 145, 0.28);
+	background: #4da3ff;
+	box-shadow: 0 0 0.5rem rgba(77, 163, 255, 0.48);
 	transition: width 100ms linear;
 	will-change: width;
 }
@@ -1078,13 +1085,12 @@ select {
 }
 
 .synchronization__label {
-	margin-top: 0.875rem;
-	color: #77736c;
+	color: #d8d2c8;
 	font-family: var(--font-mono);
 	font-size: 0.75rem;
 	font-weight: 600;
 	letter-spacing: 0.14em;
-	text-align: center;
+	text-align: right;
 }
 
 .output-content[hidden] {

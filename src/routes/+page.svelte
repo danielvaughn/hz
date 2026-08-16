@@ -146,13 +146,17 @@
 	let reconciliationError = $state('');
 	let sourceMapMode = $state(false);
 	let selectedIntentLine = $state(1);
+	let highlightingProgress = $state(0);
+	let highlightingFinishing = $state(false);
 	let synchronizationProgress = $state(0);
 	let synchronizationFinishing = $state(false);
 	let storage: LocalForage | undefined;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let pendingSave: { revision: number; snapshot: StoredWorkspace } | undefined;
 	let persistenceWriteChain = Promise.resolve();
+	let highlightingFrame: number | undefined;
 	let synchronizationFrame: number | undefined;
+	let processProgressRun = 0;
 	let saveRevision = 0;
 	let hydrated = false;
 	let editedBeforeHydration = false;
@@ -813,15 +817,29 @@
 		return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 	}
 
-	function stopSynchronizationProgress() {
-		if (synchronizationFrame !== undefined) cancelAnimationFrame(synchronizationFrame);
-		synchronizationFrame = undefined;
+	type SynchronizationProcess = 'highlighting' | 'synchronizing';
+
+	function stopProcessProgress(process: SynchronizationProcess) {
+		const frame = process === 'highlighting' ? highlightingFrame : synchronizationFrame;
+		if (frame !== undefined) cancelAnimationFrame(frame);
+		if (process === 'highlighting') highlightingFrame = undefined;
+		else synchronizationFrame = undefined;
 	}
 
-	function startSynchronizationProgress() {
-		stopSynchronizationProgress();
-		synchronizationFinishing = false;
-		synchronizationProgress = prefersReducedMotion() ? 68 : 6;
+	function stopAllProcessProgress() {
+		stopProcessProgress('highlighting');
+		stopProcessProgress('synchronizing');
+	}
+
+	function startProcessProgress(process: SynchronizationProcess) {
+		stopProcessProgress(process);
+		if (process === 'highlighting') {
+			highlightingFinishing = false;
+			highlightingProgress = prefersReducedMotion() ? 68 : 6;
+		} else {
+			synchronizationFinishing = false;
+			synchronizationProgress = prefersReducedMotion() ? 68 : 6;
+		}
 
 		if (prefersReducedMotion()) return;
 
@@ -832,29 +850,44 @@
 			if (now - lastUpdate >= SYNCHRONIZATION_FRAME_INTERVAL) {
 				const elapsed = now - startedAt;
 				const range = SYNCHRONIZATION_LIMIT - 6;
-				synchronizationProgress = Math.min(
+				const progress = Math.min(
 					SYNCHRONIZATION_LIMIT,
 					6 + range * (1 - Math.exp(-elapsed / SYNCHRONIZATION_TIME_CONSTANT))
 				);
+				if (process === 'highlighting') highlightingProgress = progress;
+				else synchronizationProgress = progress;
 				lastUpdate = now;
 			}
 
-			synchronizationFrame = requestAnimationFrame(advance);
+			const frame = requestAnimationFrame(advance);
+			if (process === 'highlighting') highlightingFrame = frame;
+			else synchronizationFrame = frame;
 		};
 
-		synchronizationFrame = requestAnimationFrame(advance);
+		const frame = requestAnimationFrame(advance);
+		if (process === 'highlighting') highlightingFrame = frame;
+		else synchronizationFrame = frame;
 	}
 
-	async function finishSynchronizationProgress() {
-		stopSynchronizationProgress();
-		synchronizationFinishing = true;
-		synchronizationProgress = 100;
+	async function finishProcessProgress(process: SynchronizationProcess, run: number) {
+		if (run !== processProgressRun) return;
+		stopProcessProgress(process);
+		if (process === 'highlighting') {
+			highlightingFinishing = true;
+			highlightingProgress = 100;
+		} else {
+			synchronizationFinishing = true;
+			synchronizationProgress = 100;
+		}
 
 		await new Promise((resolve) =>
 			setTimeout(resolve, prefersReducedMotion() ? 40 : SYNCHRONIZATION_FINISH_DURATION)
 		);
 
-		synchronizationFinishing = false;
+		if (run === processProgressRun) {
+			if (process === 'highlighting') highlightingFinishing = false;
+			else synchronizationFinishing = false;
+		}
 	}
 
 	async function handleCommit() {
@@ -864,9 +897,13 @@
 		reconciliationState = 'generating';
 		reconciliationError = '';
 		selectedOutputTab = 'source';
-		startSynchronizationProgress();
+		startProcessProgress('highlighting');
+		startProcessProgress('synchronizing');
+		const progressRun = ++processProgressRun;
 		schedulePersistence();
-		const highlightingPromise = intentEditor?.generateHighlighting() ?? Promise.resolve();
+		const highlightingPromise = (intentEditor?.generateHighlighting() ?? Promise.resolve()).then(() =>
+			finishProcessProgress('highlighting', progressRun)
+		);
 
 		try {
 			const response = await fetch('/api/reconcile', {
@@ -885,8 +922,8 @@
 				throw new Error('error' in result && result.error ? result.error : 'Reconciliation failed.');
 			}
 
+			await finishProcessProgress('synchronizing', progressRun);
 			await highlightingPromise;
-			await finishSynchronizationProgress();
 			proposedSource = result.proposedSource;
 			proposedSourceMap = cloneIntentSourceMap(result.sourceMap);
 			proposalIntent = nextIntent;
@@ -899,7 +936,10 @@
 			await schedulePersistence('immediate');
 			reconciliationState = 'reviewing';
 		} catch (error) {
-			stopSynchronizationProgress();
+			if (progressRun === processProgressRun) {
+				stopAllProcessProgress();
+				processProgressRun += 1;
+			}
 			reconciliationError = error instanceof Error ? error.message : 'Reconciliation failed.';
 			reconciliationState = 'error';
 		}
@@ -1037,7 +1077,8 @@
 			window.removeEventListener('keydown', handleWorkspaceShortcut);
 			window.removeEventListener('pagehide', flushPersistence);
 			void flushPersistence();
-			stopSynchronizationProgress();
+			stopAllProcessProgress();
+			processProgressRun += 1;
 		};
 	});
 </script>
@@ -1280,18 +1321,34 @@
 					{/key}
 				{:else if reconciliationState === 'generating'}
 					<div class="synchronization" role="status" aria-live="polite" aria-busy="true">
-						<div
-							class="synchronization__track"
-							role="progressbar"
-							aria-label="Synchronization in progress"
-						>
-							<span
-								class:synchronization__fill--finishing={synchronizationFinishing}
-								class="synchronization__fill"
-								style={`width: ${synchronizationProgress}%`}
-							></span>
+						<div class="synchronization__row">
+							<span class="synchronization__label">HIGHLIGHTING</span>
+							<div
+								class="synchronization__track"
+								role="progressbar"
+								aria-label="Highlighting in progress"
+							>
+								<span
+									class:synchronization__fill--finishing={highlightingFinishing}
+									class="synchronization__fill"
+									style={`width: ${highlightingProgress}%`}
+								></span>
+							</div>
 						</div>
-						<span class="synchronization__label">SYNCHRONIZING</span>
+						<div class="synchronization__row">
+							<span class="synchronization__label">SYNCHRONIZING</span>
+							<div
+								class="synchronization__track"
+								role="progressbar"
+								aria-label="Synchronization in progress"
+							>
+								<span
+									class:synchronization__fill--finishing={synchronizationFinishing}
+									class="synchronization__fill"
+									style={`width: ${synchronizationProgress}%`}
+								></span>
+							</div>
+						</div>
 					</div>
 				{:else if displayedSource}
 					{#key sourceViewKey}
