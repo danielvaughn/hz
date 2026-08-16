@@ -47,8 +47,8 @@
 	let host: HTMLDivElement;
 	let view = $state.raw<EditorView>();
 	let applyingExternalValue = false;
-	let configuredDisabled = disabled;
-	let configuredPlaceholder = placeholder;
+	let configuredDisabled: boolean;
+	let configuredPlaceholder: string;
 	const editable = new Compartment();
 	const placeholderSlot = new Compartment();
 
@@ -155,6 +155,8 @@
 	);
 
 	onMount(() => {
+		configuredDisabled = disabled;
+		configuredPlaceholder = placeholder;
 		view = new EditorView({
 			doc: value,
 			parent: host,

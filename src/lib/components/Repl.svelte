@@ -23,7 +23,7 @@
 	};
 
 	let { source, initialCommand = '', hint = '' }: Props = $props();
-	let worker: Worker | undefined;
+	let worker = $state.raw<Worker>();
 	let loadedSource = '';
 	let mounted = false;
 	let output: HTMLDivElement;
@@ -221,7 +221,9 @@
 			onclick={() => startRuntime(source)}
 		>
 			{#if loading}
-				<LoaderCircle class="repl__spinner" size={13} strokeWidth={1.75} />
+				<span class="repl__spinner">
+					<LoaderCircle size={13} strokeWidth={1.75} />
+				</span>
 			{:else}
 				<Play size={13} strokeWidth={1.75} />
 			{/if}
@@ -326,6 +328,7 @@
 	}
 
 	.repl__spinner {
+		display: inline-flex;
 		animation: repl-spin 700ms linear infinite;
 	}
 

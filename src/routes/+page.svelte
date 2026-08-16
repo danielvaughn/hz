@@ -102,8 +102,8 @@
 	};
 
 	let workspace: HTMLElement;
-	let outputPane: HTMLElement;
-	let reviewPanel: HTMLElement;
+	let outputPane = $state.raw<HTMLElement>();
+	let reviewPanel = $state.raw<HTMLElement>();
 	let intentEditor = $state.raw<IntentEditorHandle>();
 	let split = $state(50);
 	let resizing = $state(false);
@@ -275,6 +275,7 @@
 	}
 
 	function maximumReviewHeight() {
+		if (!outputPane) return MIN_REVIEW_HEIGHT;
 		return Math.max(
 			MIN_REVIEW_HEIGHT,
 			outputPane.getBoundingClientRect().height - OUTPUT_HEADER_HEIGHT - MIN_SOURCE_HEIGHT
@@ -286,6 +287,7 @@
 	}
 
 	function handleReviewResizeStart(event: PointerEvent) {
+		if (!reviewPanel) return;
 		reviewResizing = true;
 		reviewResizeStartY = event.clientY;
 		reviewResizeStartHeight = reviewPanel.getBoundingClientRect().height;
@@ -306,7 +308,8 @@
 	}
 
 	function handleReviewResizeKeydown(event: KeyboardEvent) {
-		const currentHeight = reviewHeight ?? reviewPanel.getBoundingClientRect().height;
+		const currentHeight = reviewHeight ?? reviewPanel?.getBoundingClientRect().height;
+		if (currentHeight === undefined) return;
 
 		switch (event.key) {
 			case 'ArrowUp':
@@ -1348,7 +1351,7 @@
 				<button
 					class="proposal-review__resize"
 					type="button"
-					role="separator"
+					role="slider"
 					aria-label="Resize review details"
 					aria-orientation="horizontal"
 					aria-valuemin={MIN_REVIEW_HEIGHT}
