@@ -317,16 +317,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		}));
 
 		const prompt = buildPrompt(body);
-		console.info(
-			`[reconcile:${requestId}] prompt sent to model\n----- BEGIN PROMPT -----\n${prompt}\n----- END PROMPT -----`
-		);
 		await promptWithTimeout(session, prompt);
 
 		const output = session.getLastAssistantText();
 		if (!output) throw new InvalidModelResponseError('The reconciler returned no response.');
-		console.info(
-			`[reconcile:${requestId}] raw model response (${output.length} characters)\n----- BEGIN MODEL RESPONSE -----\n${output}\n----- END MODEL RESPONSE -----`
-		);
 
 		const { response: result, sourceMapWarnings } = parseResponse(output, body.nextIntent);
 		const { model, usage } = inferenceDetails(session);
