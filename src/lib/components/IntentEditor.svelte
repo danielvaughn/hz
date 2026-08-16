@@ -2,6 +2,7 @@
 	import { basicSetup, EditorView } from 'codemirror';
 	import { indentWithTab } from '@codemirror/commands';
 	import { indentUnit } from '@codemirror/language';
+	import { unifiedMergeView } from '@codemirror/merge';
 	import {
 		ChangeDesc,
 		EditorState,
@@ -27,6 +28,8 @@
 	type Props = {
 		value: string;
 		highlighting?: PersistedHighlighting | null;
+		original?: string | null;
+		readonly?: boolean;
 		onchange: (value: string) => void;
 		onhighlightingchange: (highlighting: PersistedHighlighting, persistImmediately?: boolean) => void;
 		ontogglesourcemap: () => void;
@@ -36,6 +39,8 @@
 	let {
 		value,
 		highlighting,
+		original = null,
+		readonly = false,
 		onchange,
 		onhighlightingchange,
 		ontogglesourcemap,
@@ -232,6 +237,7 @@
 	}
 
 	function publishHighlighting(persistImmediately = false) {
+		if (readonly) return;
 		const snapshot = serializeHighlighting();
 		if (snapshot) onhighlightingchange(snapshot, persistImmediately);
 	}
@@ -278,7 +284,7 @@
 	}
 
 	export async function generateHighlighting(forceFullDocument = false) {
-		if (!view || view.state.doc.length === 0) return;
+		if (readonly || !view || view.state.doc.length === 0) return;
 		stopPendingHighlight();
 
 		if (forceFullDocument) {
@@ -298,6 +304,7 @@
 			parent: host,
 			extensions: [
 				basicSetup,
+				EditorView.editable.of(!readonly),
 				indentUnit.of('    '),
 				EditorState.tabSize.of(4),
 				keymap.of([
@@ -311,9 +318,20 @@
 					indentWithTab
 				]),
 				EditorView.lineWrapping,
-				EditorView.contentAttributes.of({ 'aria-label': 'Spec editor' }),
+				EditorView.contentAttributes.of({
+					'aria-label': readonly ? 'Historical spec diff' : 'Spec editor'
+				}),
 				highlightField,
 				theme,
+				...(original === null
+					? []
+					: unifiedMergeView({
+							original,
+							highlightChanges: false,
+							gutter: true,
+							mergeControls: false,
+							allowInlineDiffs: true
+						})),
 				EditorView.updateListener.of((update) => {
 					if (update.selectionSet || update.docChanged) {
 						onintentlinechange(update.state.doc.lineAt(update.state.selection.main.head).number);

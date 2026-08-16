@@ -1,6 +1,7 @@
 <script lang="ts">
 	import IntentEditor from '$lib/components/IntentEditor.svelte';
 	import Repl from '$lib/components/Repl.svelte';
+	import ReviewDetails from '$lib/components/ReviewDetails.svelte';
 	import SourceViewer from '$lib/components/SourceViewer.svelte';
 	import type { PersistedHighlighting } from '$lib/highlighting';
 	import type { InferenceModel, InferenceUsage } from '$lib/inference';
@@ -16,7 +17,7 @@
 		WELCOME_REPL_COMMAND
 	} from '$lib/welcome';
 	import { presentableDiff } from '@codemirror/merge';
-	import { FilePlus2, FileText, FolderOpen, RefreshCw } from '@lucide/svelte';
+	import { FilePlus2, FileText, FolderOpen, History, RefreshCw, X } from '@lucide/svelte';
 	import { AlertDialog, Command, Dialog, Tooltip } from 'bits-ui';
 	import { onMount, tick } from 'svelte';
 
@@ -47,10 +48,16 @@
 		createdAt: string;
 		intent: string;
 		source: string;
+		highlighting: PersistedHighlighting | null;
+		sourceMap: IntentSourceMap | null;
+		summary: string;
+		assumptions: string[];
+		model: InferenceModel | null;
+		usage: InferenceUsage | null;
 	};
 
 	type StoredProject = {
-		version: 5;
+		version: 6;
 		draftIntent: string;
 		committedIntent: string;
 		committedSource: string;
@@ -62,6 +69,7 @@
 		proposalAssumptions: string[];
 		proposalModel?: InferenceModel | null;
 		proposalUsage?: InferenceUsage | null;
+		proposalHighlighting: PersistedHighlighting | null;
 		commits: CommitRecord[];
 		highlighting: PersistedHighlighting | null;
 		selectedOutputTab: OutputTab;
@@ -77,7 +85,7 @@
 	};
 
 	type StoredWorkspace = {
-		version: 1;
+		version: 2;
 		activeFileId: string;
 		files: StoredFile[];
 	};
@@ -101,6 +109,9 @@
 	let resizing = $state(false);
 	let reviewResizing = $state(false);
 	let reviewHeight = $state<number | null>(null);
+	let historyOpen = $state(false);
+	let selectedCommitId = $state<string | null>(null);
+	let outputTabBeforeHistory = $state<OutputTab>('source');
 	let stacked = $state(false);
 	let draftIntent = $state('');
 	let committedIntent = $state('');
@@ -113,6 +124,7 @@
 	let proposalAssumptions = $state<string[]>([]);
 	let proposalModel = $state<InferenceModel | null>(null);
 	let proposalUsage = $state<InferenceUsage | null>(null);
+	let proposalHighlighting = $state<PersistedHighlighting | null>(null);
 	let commits = $state<CommitRecord[]>([]);
 	let intentHighlighting = $state<PersistedHighlighting | null | undefined>(undefined);
 	let selectedOutputTab = $state<OutputTab>('source');
@@ -149,13 +161,31 @@
 
 	let dirty = $derived(draftIntent !== committedIntent);
 	let commitDisabled = $derived(
-		!dirty || reconciliationState === 'generating' || reconciliationState === 'reviewing'
+		!dirty ||
+		historyOpen ||
+		reconciliationState === 'generating' ||
+		reconciliationState === 'reviewing'
 	);
 	let fileOperationDisabled = $derived(
-		reconciliationState === 'generating' || persistenceState === 'loading' || clearingSavedData
+		historyOpen ||
+		reconciliationState === 'generating' ||
+		persistenceState === 'loading' ||
+		clearingSavedData
 	);
 	let activeFile = $derived(files.find((file) => file.id === activeFileId));
 	let intentChanges = $derived(summarizeIntentDiff(committedIntent, draftIntent));
+	let selectedCommitIndex = $derived(commits.findIndex((commit) => commit.id === selectedCommitId));
+	let selectedCommit = $derived(
+		selectedCommitIndex >= 0 ? (commits[selectedCommitIndex] ?? null) : null
+	);
+	let previousCommit = $derived(
+		selectedCommitIndex > 0 ? (commits[selectedCommitIndex - 1] ?? null) : null
+	);
+	let visibleIntentChanges = $derived(
+		historyOpen && selectedCommit
+			? summarizeIntentDiff(previousCommit?.intent ?? '', selectedCommit.intent)
+			: intentChanges
+	);
 	let displayedSource = $derived(proposedSource ?? committedSource);
 	let displayedSourceMap = $derived(proposedSource === null ? committedSourceMap : proposedSourceMap);
 	let displayedMapIntent = $derived(proposedSource === null ? committedIntent : proposalIntent);
@@ -165,6 +195,7 @@
 			: []
 	);
 	let sourceViewKey = $derived(`${proposedSource === null ? 'committed' : 'proposal'}:${displayedSource}`);
+	let historyViewKey = $derived(`history:${selectedCommitId ?? 'none'}`);
 	let isWelcomeFile = $derived(activeFile?.welcome === true);
 	let isWelcomeStart = $derived(isWelcomeFile && commits.length === 0 && !committedSource);
 	let welcomeReplCommand = $derived(
@@ -172,6 +203,9 @@
 	);
 	let status = $derived.by(() => {
 		if (persistenceState === 'error') return { kind: 'error', message: 'Draft storage is unavailable' };
+		if (historyOpen && selectedCommit) {
+			return { kind: 'neutral', message: `Viewing revision ${selectedCommitIndex + 1}` };
+		}
 		if (reconciliationState === 'error') return { kind: 'error', message: 'Synchronization failed' };
 		if (reconciliationState === 'generating') return { kind: 'working', message: 'Synchronizing implementation' };
 		if (reconciliationState === 'reviewing') return { kind: 'review', message: 'Implementation ready for review' };
@@ -295,18 +329,8 @@
 	}
 
 	function getProjectSnapshot(): StoredProject {
-		const highlighting = intentHighlighting
-			? {
-					version: intentHighlighting.version,
-					taxonomyVersion: intentHighlighting.taxonomyVersion,
-					sourceText: intentHighlighting.sourceText,
-					marks: intentHighlighting.marks.map((mark) => ({ ...mark })),
-					dirtyRanges: intentHighlighting.dirtyRanges.map((range) => ({ ...range }))
-				}
-			: null;
-
 		return {
-			version: 5,
+			version: 6,
 			draftIntent,
 			committedIntent,
 			committedSource,
@@ -318,15 +342,16 @@
 			proposalAssumptions: [...proposalAssumptions],
 			proposalModel: proposalModel ? { ...proposalModel } : null,
 			proposalUsage: cloneInferenceUsage(proposalUsage),
-			commits: commits.map((commit) => ({ ...commit })),
-			highlighting,
+			proposalHighlighting: cloneHighlighting(proposalHighlighting),
+			commits: commits.map(cloneCommit),
+			highlighting: cloneHighlighting(intentHighlighting),
 			selectedOutputTab
 		};
 	}
 
 	function emptyProject(draft = ''): StoredProject {
 		return {
-			version: 5,
+			version: 6,
 			draftIntent: draft,
 			committedIntent: '',
 			committedSource: '',
@@ -338,6 +363,7 @@
 			proposalAssumptions: [],
 			proposalModel: null,
 			proposalUsage: null,
+			proposalHighlighting: null,
 			commits: [],
 			highlighting: null,
 			selectedOutputTab: 'source'
@@ -358,7 +384,7 @@
 
 	function cloneProject(project: StoredProject): StoredProject {
 		return {
-			version: 5,
+			version: 6,
 			draftIntent: project.draftIntent,
 			committedIntent: project.committedIntent,
 			committedSource: project.committedSource,
@@ -370,16 +396,9 @@
 			proposalAssumptions: [...project.proposalAssumptions],
 			proposalModel: project.proposalModel ? { ...project.proposalModel } : null,
 			proposalUsage: cloneInferenceUsage(project.proposalUsage),
-			commits: project.commits.map((commit) => ({ ...commit })),
-			highlighting: project.highlighting
-				? {
-						version: project.highlighting.version,
-						taxonomyVersion: project.highlighting.taxonomyVersion,
-						sourceText: project.highlighting.sourceText,
-						marks: project.highlighting.marks.map((mark) => ({ ...mark })),
-						dirtyRanges: project.highlighting.dirtyRanges.map((range) => ({ ...range }))
-					}
-				: null,
+			proposalHighlighting: cloneHighlighting(project.proposalHighlighting),
+			commits: project.commits.map(cloneCommit),
+			highlighting: cloneHighlighting(project.highlighting),
 			selectedOutputTab: project.selectedOutputTab
 		};
 	}
@@ -396,12 +415,15 @@
 		proposalAssumptions = [...project.proposalAssumptions];
 		proposalModel = project.proposalModel ? { ...project.proposalModel } : null;
 		proposalUsage = cloneInferenceUsage(project.proposalUsage);
-		commits = project.commits.map((commit) => ({ ...commit }));
-		intentHighlighting = project.highlighting;
+		proposalHighlighting = cloneHighlighting(project.proposalHighlighting);
+		commits = project.commits.map(cloneCommit);
+		intentHighlighting = cloneHighlighting(project.highlighting);
 		selectedOutputTab = project.selectedOutputTab;
 		reconciliationState = project.proposedSource ? 'reviewing' : 'idle';
 		reconciliationError = '';
 		reviewHeight = null;
+		historyOpen = false;
+		selectedCommitId = null;
 		sourceMapMode = false;
 		selectedIntentLine = 1;
 	}
@@ -410,7 +432,7 @@
 		const timestamp = new Date().toISOString();
 		const project = getProjectSnapshot();
 		return {
-			version: 1,
+			version: 2,
 			activeFileId: activeId,
 			files: files.map((file) => ({
 				id: file.id,
@@ -704,13 +726,63 @@
 		};
 	}
 
-	function formatTokenCount(tokens: number) {
-		return new Intl.NumberFormat().format(tokens);
+	function cloneHighlighting(
+		highlighting: PersistedHighlighting | null | undefined
+	): PersistedHighlighting | null {
+		if (!highlighting) return null;
+		return {
+			version: highlighting.version,
+			taxonomyVersion: highlighting.taxonomyVersion,
+			sourceText: highlighting.sourceText,
+			marks: highlighting.marks.map((mark) => ({ ...mark })),
+			dirtyRanges: highlighting.dirtyRanges.map((range) => ({ ...range }))
+		};
 	}
 
-	function formatEstimatedCost(cost: number) {
-		const fractionDigits = cost < 0.01 ? 4 : cost < 1 ? 3 : 2;
-		return `$${cost.toFixed(fractionDigits)}`;
+	function cloneCommit(commit: CommitRecord): CommitRecord {
+		return {
+			id: commit.id,
+			createdAt: commit.createdAt,
+			intent: commit.intent,
+			source: commit.source,
+			highlighting: cloneHighlighting(commit.highlighting),
+			sourceMap: cloneIntentSourceMap(commit.sourceMap),
+			summary: commit.summary,
+			assumptions: [...commit.assumptions],
+			model: commit.model ? { ...commit.model } : null,
+			usage: cloneInferenceUsage(commit.usage)
+		};
+	}
+
+	function formatRevisionDate(createdAt: string) {
+		return new Intl.DateTimeFormat(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit'
+		}).format(new Date(createdAt));
+	}
+
+	function openHistory() {
+		if (commits.length === 0 || reconciliationState === 'generating') return;
+		outputTabBeforeHistory = selectedOutputTab;
+		selectedOutputTab = 'source';
+		selectedCommitId = commits.at(-1)?.id ?? null;
+		historyOpen = true;
+		reviewHeight = null;
+		sourceMapMode = false;
+	}
+
+	function closeHistory() {
+		historyOpen = false;
+		selectedCommitId = null;
+		selectedOutputTab = outputTabBeforeHistory;
+		reviewHeight = null;
+	}
+
+	function toggleHistory() {
+		if (historyOpen) closeHistory();
+		else openHistory();
 	}
 
 	function summarizeIntentDiff(previous: string, next: string) {
@@ -819,6 +891,8 @@
 			proposalAssumptions = result.assumptions;
 			proposalModel = { ...result.model };
 			proposalUsage = cloneInferenceUsage(result.usage);
+			proposalHighlighting =
+				intentHighlighting?.sourceText === nextIntent ? cloneHighlighting(intentHighlighting) : null;
 			await schedulePersistence('immediate');
 			reconciliationState = 'reviewing';
 		} catch (error) {
@@ -836,6 +910,7 @@
 		proposalAssumptions = [];
 		proposalModel = null;
 		proposalUsage = null;
+		proposalHighlighting = null;
 	}
 
 	function acceptProposal() {
@@ -851,7 +926,13 @@
 				id: crypto.randomUUID(),
 				createdAt: new Date().toISOString(),
 				intent: proposalIntent,
-				source: proposedSource
+				source: proposedSource,
+				highlighting: cloneHighlighting(proposalHighlighting),
+				sourceMap: cloneIntentSourceMap(proposedSourceMap),
+				summary: proposalSummary,
+				assumptions: [...proposalAssumptions],
+				model: proposalModel ? { ...proposalModel } : null,
+				usage: cloneInferenceUsage(proposalUsage)
 			}
 		];
 		clearProposal();
@@ -915,7 +996,7 @@
 				storage = localforage.createInstance({ name: 'hz', storeName: 'projects' });
 
 				const stored = await storage.getItem<StoredWorkspace>(STORAGE_KEY);
-				const storedFiles = stored?.version === 1 && Array.isArray(stored.files) ? stored.files : [];
+				const storedFiles = stored?.version === 2 && Array.isArray(stored.files) ? stored.files : [];
 				const storedActiveFile = storedFiles.find((file) => file.id === stored?.activeFileId);
 
 				if (storedActiveFile) {
@@ -966,6 +1047,7 @@
 	bind:this={workspace}
 	class:workspace--resizing={resizing}
 	class:workspace--review-resizing={reviewResizing}
+	class:workspace--history={historyOpen}
 	class="workspace"
 	style={`--split: ${split}%`}
 	aria-label="hz workspace"
@@ -993,6 +1075,16 @@
 				{/key}
 			</div>
 			<nav class="file-toolbar__actions" aria-label="File actions">
+				<button
+					class:file-toolbar__button--active={historyOpen}
+					class="file-toolbar__button"
+					type="button"
+					disabled={commits.length === 0 || reconciliationState === 'generating'}
+					onclick={toggleHistory}
+				>
+					<History size={13} strokeWidth={1.7} aria-hidden="true" />
+					<span>History</span>
+				</button>
 				<button
 					class="file-toolbar__button"
 					type="button"
@@ -1025,17 +1117,32 @@
 		</header>
 
 		<div class="workspace__editor">
-			{#key activeFileId}
-				<IntentEditor
-					bind:this={intentEditor}
-					value={draftIntent}
-					highlighting={intentHighlighting}
-					onchange={handleIntentChange}
-					onhighlightingchange={handleHighlightingChange}
-					ontogglesourcemap={toggleSourceMapMode}
-					onintentlinechange={(line) => (selectedIntentLine = line)}
-				/>
-			{/key}
+			{#if historyOpen && selectedCommit}
+				{#key historyViewKey}
+					<IntentEditor
+						value={selectedCommit.intent}
+						original={previousCommit?.intent ?? ''}
+						highlighting={selectedCommit.highlighting}
+						readonly
+						onchange={() => {}}
+						onhighlightingchange={() => {}}
+						ontogglesourcemap={() => {}}
+						onintentlinechange={() => {}}
+					/>
+				{/key}
+			{:else}
+				{#key activeFileId}
+					<IntentEditor
+						bind:this={intentEditor}
+						value={draftIntent}
+						highlighting={intentHighlighting}
+						onchange={handleIntentChange}
+						onhighlightingchange={handleHighlightingChange}
+						ontogglesourcemap={toggleSourceMapMode}
+						onintentlinechange={(line) => (selectedIntentLine = line)}
+					/>
+				{/key}
+			{/if}
 		</div>
 
 		<footer class="intent-status">
@@ -1055,9 +1162,9 @@
 						</Tooltip.Portal>
 					</Tooltip.Root>
 				</Tooltip.Provider>
-				<div class="intent-status__diff" aria-label={`${intentChanges.additions} additions, ${intentChanges.removals} removals`}>
-					<span class="intent-status__additions">+{intentChanges.additions}</span>
-					<span class="intent-status__removals">−{intentChanges.removals}</span>
+				<div class="intent-status__diff" aria-label={`${visibleIntentChanges.additions} additions, ${visibleIntentChanges.removals} removals`}>
+					<span class="intent-status__additions">+{visibleIntentChanges.additions}</span>
+					<span class="intent-status__removals">−{visibleIntentChanges.removals}</span>
 				</div>
 			</div>
 			<div class="intent-status__actions">
@@ -1089,6 +1196,44 @@
 		onkeydown={handleDividerKeydown}
 	></button>
 
+	{#if historyOpen}
+		<section class="workspace__pane workspace__pane--history" aria-label="Document history">
+			<header class="history-header">
+				<div>
+					<span>History</span>
+					<small>{commits.length} {commits.length === 1 ? 'revision' : 'revisions'}</small>
+				</div>
+				<button type="button" aria-label="Close history" onclick={closeHistory}>
+					<X size={14} strokeWidth={1.7} aria-hidden="true" />
+				</button>
+			</header>
+			<div class="history-list" role="listbox" aria-label="Accepted revisions">
+				{#each commits.slice().reverse() as commit, reverseIndex (commit.id)}
+					{@const index = commits.length - reverseIndex - 1}
+					{@const prior = index > 0 ? commits[index - 1] : null}
+					{@const specChange = summarizeIntentDiff(prior?.intent ?? '', commit.intent)}
+					{@const sourceChange = summarizeIntentDiff(prior?.source ?? '', commit.source)}
+					<button
+						class:history-list__item--selected={commit.id === selectedCommitId}
+						class="history-list__item"
+						type="button"
+						role="option"
+						aria-selected={commit.id === selectedCommitId}
+						onclick={() => (selectedCommitId = commit.id)}
+					>
+						<span class="history-list__revision">Revision {index + 1}</span>
+						<time datetime={commit.createdAt}>{formatRevisionDate(commit.createdAt)}</time>
+						<strong>{commit.summary}</strong>
+						<span class="history-list__stats">
+							<span>Spec <i>+{specChange.additions}</i> <b>−{specChange.removals}</b></span>
+							<span>Source <i>+{sourceChange.additions}</i> <b>−{sourceChange.removals}</b></span>
+						</span>
+					</button>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
 	<section bind:this={outputPane} class="workspace__pane workspace__pane--output" aria-label="Output workspace">
 		<header class="output-tabs" role="tablist" aria-label="Output views">
 			<button
@@ -1104,17 +1249,19 @@
 			>
 				Source
 			</button>
-			<button
-				class:output-tabs__tab--active={selectedOutputTab === 'repl'}
-				class="output-tabs__tab"
-				type="button"
-				role="tab"
-				aria-selected={selectedOutputTab === 'repl'}
-				aria-controls="repl-panel"
-				onclick={() => selectOutputTab('repl')}
-			>
-				REPL
-			</button>
+			{#if !historyOpen}
+				<button
+					class:output-tabs__tab--active={selectedOutputTab === 'repl'}
+					class="output-tabs__tab"
+					type="button"
+					role="tab"
+					aria-selected={selectedOutputTab === 'repl'}
+					aria-controls="repl-panel"
+					onclick={() => selectOutputTab('repl')}
+				>
+					REPL
+				</button>
+			{/if}
 		</header>
 
 		<div
@@ -1124,7 +1271,11 @@
 			aria-label="Generated source"
 			hidden={selectedOutputTab !== 'source'}
 		>
-				{#if reconciliationState === 'generating'}
+				{#if historyOpen && selectedCommit}
+					{#key historyViewKey}
+						<SourceViewer source={selectedCommit.source} original={previousCommit?.source ?? ''} />
+					{/key}
+				{:else if reconciliationState === 'generating'}
 					<div class="synchronization" role="status" aria-live="polite" aria-busy="true">
 						<div
 							class="synchronization__track"
@@ -1177,7 +1328,16 @@
 			/>
 		</div>
 
-		{#if reconciliationState === 'reviewing' && proposedSource !== null}
+		{#if historyOpen && selectedCommit}
+			<aside class="proposal-review proposal-review--history" aria-label="Revision details">
+				<ReviewDetails
+					summary={selectedCommit.summary}
+					assumptions={selectedCommit.assumptions}
+					model={selectedCommit.model}
+					usage={selectedCommit.usage}
+				/>
+			</aside>
+		{:else if reconciliationState === 'reviewing' && proposedSource !== null}
 			<aside
 				bind:this={reviewPanel}
 				class:proposal-review--sized={reviewHeight !== null}
@@ -1200,44 +1360,12 @@
 					onpointercancel={handleReviewResizeEnd}
 					onkeydown={handleReviewResizeKeydown}
 				></button>
-				<div class="proposal-review__copy">
-					{#if proposalModel}
-						<dl class="proposal-review__inference">
-							<div>
-								<dt class="proposal-review__label">Model</dt>
-								<dd><code>{proposalModel.provider}/{proposalModel.id}</code></dd>
-							</div>
-							{#if proposalUsage}
-								<div>
-									<dt class="proposal-review__label">Tokens</dt>
-									<dd>
-										{formatTokenCount(proposalUsage.tokens.total)} ({formatTokenCount(
-											proposalUsage.tokens.input
-										)} input, {formatTokenCount(proposalUsage.tokens.output)} output)
-									</dd>
-								</div>
-								<div
-									title="Pi's model-pricing estimate; your provider's actual billing may differ."
-								>
-									<dt class="proposal-review__label">Est. cost</dt>
-									<dd>{formatEstimatedCost(proposalUsage.estimatedCostUsd)} USD</dd>
-								</div>
-							{/if}
-						</dl>
-					{/if}
-					<span class="proposal-review__label proposal-review__description-label">Description</span>
-					<p>{proposalSummary}</p>
-					{#if proposalAssumptions.length > 0}
-						<div class="proposal-review__assumptions">
-							<span class="proposal-review__label">Assumptions</span>
-							<ol>
-								{#each proposalAssumptions as assumption}
-									<li>{assumption}</li>
-								{/each}
-							</ol>
-						</div>
-					{/if}
-				</div>
+				<ReviewDetails
+					summary={proposalSummary}
+					assumptions={proposalAssumptions}
+					model={proposalModel}
+					usage={proposalUsage}
+				/>
 				<div class="proposal-review__actions">
 					<button class="review-button review-button--secondary" type="button" onclick={rejectProposal}>
 						Reject
