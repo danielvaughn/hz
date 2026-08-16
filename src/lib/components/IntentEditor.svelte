@@ -302,7 +302,7 @@
 				EditorState.tabSize.of(4),
 				keymap.of([
 					{
-						key: '.',
+						key: 'Mod-.',
 						run: () => {
 							ontogglesourcemap();
 							return true;
