@@ -109,6 +109,7 @@
 		{
 			'&': {
 				width: '100%',
+				height: '1.6em',
 				backgroundColor: 'transparent',
 				color: '#cbc7c0',
 				fontSize: '13px'
