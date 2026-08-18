@@ -2,6 +2,11 @@
 
 An experimental interface for building software by editing persistent pseudocode and synchronizing it with an AI-generated implementation.
 
+This repository is an npm workspace monorepo:
+
+- `packages/hz` contains the existing SvelteKit application.
+- `packages/electron` is reserved for a future Electron application and is intentionally empty.
+
 ## setup
 
 You need Node.js 22.19 or newer and access to a model provider supported by [Pi](https://github.com/earendil-works/pi).
