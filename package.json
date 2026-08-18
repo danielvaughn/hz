@@ -6,13 +6,13 @@
 		"packages/*"
 	],
 	"scripts": {
-		"dev": "npm run dev --workspace=hz",
-		"dev:web": "npm run dev --workspace=hz",
+		"dev": "npm run dev --workspace=poc",
+		"dev:web": "npm run dev --workspace=poc",
 		"dev:electron": "npm run dev --workspace=@hz/electron",
 		"build": "npm run build --workspaces --if-present",
 		"build:electron": "npm run build --workspace=@hz/electron",
-		"preview": "npm run preview --workspace=hz",
+		"preview": "npm run preview --workspace=poc",
 		"check": "npm run check --workspaces --if-present",
-		"check:watch": "npm run check:watch --workspace=hz"
+		"check:watch": "npm run check:watch --workspace=poc"
 	}
 }
