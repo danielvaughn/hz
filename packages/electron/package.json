@@ -1,0 +1,26 @@
+{
+	"name": "@hz/electron",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"main": "./out/main/index.js",
+	"scripts": {
+		"dev": "electron-vite dev",
+		"build": "npm run check && electron-vite build",
+		"preview": "electron-vite preview",
+		"check": "tsc --noEmit -p tsconfig.node.json && svelte-check --tsconfig ./tsconfig.web.json"
+	},
+	"devDependencies": {
+		"@sveltejs/vite-plugin-svelte": "^6.2.4",
+		"@tailwindcss/postcss": "^4.3.3",
+		"@types/node": "^24.10.0",
+		"electron": "^43.4.0",
+		"electron-vite": "^5.0.0",
+		"postcss": "^8.5.6",
+		"svelte": "^5.56.9",
+		"svelte-check": "^4.6.0",
+		"tailwindcss": "^4.3.3",
+		"typescript": "^6.0.3",
+		"vite": "^7.3.6"
+	}
+}

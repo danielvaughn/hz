@@ -5,7 +5,7 @@ An experimental interface for building software by editing persistent pseudocode
 This repository is an npm workspace monorepo:
 
 - `packages/hz` contains the existing SvelteKit application.
-- `packages/electron` is reserved for a future Electron application and is intentionally empty.
+- `packages/electron` contains the Electron desktop application built with Svelte and Tailwind CSS.
 
 ## setup
 

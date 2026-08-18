@@ -9,6 +9,7 @@ node_modules
 /build
 /packages/*/.svelte-kit
 /packages/*/build
+/packages/*/out
 
 # OS
 .DS_Store
