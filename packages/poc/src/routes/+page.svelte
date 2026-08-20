@@ -25,6 +25,7 @@
 	const MAX_SPLIT = 80;
 	const KEYBOARD_STEP = 2;
 	const STORAGE_KEY = 'workspace';
+	const INSTRUCTIONS_STORAGE_KEY = 'hz:instructions-dismissed:v1';
 	const SAVE_DELAY = 120;
 	const SYNCHRONIZATION_LIMIT = 92;
 	const SYNCHRONIZATION_TIME_CONSTANT = 8_000;
@@ -131,6 +132,7 @@
 	let persistenceState = $state<PersistenceState>('loading');
 	let clearingSavedData = $state(false);
 	let clearDataDialogOpen = $state(false);
+	let instructionsOpen = $state(false);
 	let commandMenuOpen = $state(false);
 	let commandSearch = $state('');
 	let fileNameDialogOpen = $state(false);
@@ -528,6 +530,21 @@
 		if (!open) commandSearch = '';
 	}
 
+	function setInstructionsOpen(open: boolean) {
+		instructionsOpen = open;
+		if (!open) {
+			try {
+				localStorage.setItem(INSTRUCTIONS_STORAGE_KEY, 'true');
+			} catch {
+				// The guide still works when browser storage is unavailable.
+			}
+		}
+	}
+
+	function openInstructions() {
+		instructionsOpen = true;
+	}
+
 	async function runCommand(action: () => void | Promise<void>) {
 		setCommandMenuOpen(false);
 		await tick();
@@ -707,6 +724,7 @@
 		try {
 			await persistenceWriteChain;
 			await storage.clear();
+			localStorage.removeItem(INSTRUCTIONS_STORAGE_KEY);
 			window.location.reload();
 		} catch (error) {
 			console.error('Could not clear saved hz data.', error);
@@ -1027,6 +1045,11 @@
 	onMount(() => {
 		const mediaQuery = window.matchMedia('(max-width: 48rem)');
 		const updateOrientation = () => (stacked = mediaQuery.matches);
+		try {
+			instructionsOpen = localStorage.getItem(INSTRUCTIONS_STORAGE_KEY) !== 'true';
+		} catch {
+			instructionsOpen = true;
+		}
 
 		updateOrientation();
 		mediaQuery.addEventListener('change', updateOrientation);
@@ -1212,6 +1235,9 @@
 				</div>
 			</div>
 			<div class="intent-status__actions">
+				<button class="intent-status__command" type="button" onclick={openInstructions}>
+					Help
+				</button>
 				<button
 					class="intent-status__command"
 					type="button"
@@ -1444,6 +1470,58 @@
 	</section>
 </main>
 
+<Dialog.Root open={instructionsOpen} onOpenChange={setInstructionsOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="instructions-dialog__overlay" />
+		<Dialog.Content class="instructions-dialog__content">
+			<Dialog.Title class="instructions-dialog__title">Welcome to Huzzah</Dialog.Title>
+			<Dialog.Description class="instructions-dialog__description">
+				Follow the instructions below to get started.
+			</Dialog.Description>
+
+			<ol class="instructions-dialog__steps">
+				<li>
+					<span class="instructions-dialog__step-number">1</span>
+					<div>
+						<strong>Edit the pseudocode</strong>
+						<p>Start with the example on the left, or replace it with your own idea.</p>
+					</div>
+				</li>
+				<li>
+					<span class="instructions-dialog__step-number">2</span>
+					<div>
+						<strong>Synchronize</strong>
+						<p>Press <kbd>⌘S</kbd> to generate a JavaScript implementation on the right.</p>
+					</div>
+				</li>
+				<li>
+					<span class="instructions-dialog__step-number">3</span>
+					<div>
+						<strong>Review, accept, and run</strong>
+						<p>Inspect the changes, accept what looks right, then try the result in the REPL.</p>
+					</div>
+				</li>
+			</ol>
+
+			<div class="instructions-dialog__note">
+				<span>IMPORTANT</span>
+				<p>
+					Your pseudocode (and the generated source) are sent to your configured model provider. So avoid including secrets and/or untrusted code.
+				</p>
+			</div>
+
+			<div class="instructions-dialog__footer">
+				<p>You can reopen this guide anytime from the workspace footer or command menu.</p>
+				<Dialog.Close class="instructions-dialog__button" type="button">Close</Dialog.Close>
+			</div>
+
+			<Dialog.Close class="instructions-dialog__close" type="button" aria-label="Close guide">
+				<X size={16} strokeWidth={1.7} aria-hidden="true" />
+			</Dialog.Close>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
 <Dialog.Root open={commandMenuOpen} onOpenChange={setCommandMenuOpen}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="command-dialog__overlay" />
@@ -1499,6 +1577,14 @@
 								>
 									<span>{sourceMapMode ? 'Disable source map' : 'Enable source map'}</span>
 									<kbd>.</kbd>
+								</Command.Item>
+								<Command.Item
+									class="command-menu__item"
+									value="show-getting-started-guide"
+									keywords={['help', 'instructions', 'onboarding', 'guide']}
+									onSelect={() => runCommand(openInstructions)}
+								>
+									<span>Show getting started guide</span>
 								</Command.Item>
 							</Command.GroupItems>
 						</Command.Group>

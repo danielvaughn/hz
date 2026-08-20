@@ -447,6 +447,194 @@ select {
 	border: 0;
 }
 
+.instructions-dialog__overlay {
+	position: fixed;
+	z-index: 50;
+	inset: 0;
+	background: rgba(3, 3, 3, 0.76);
+	backdrop-filter: blur(5px);
+}
+
+.instructions-dialog__content {
+	position: fixed;
+	z-index: 51;
+	top: 50%;
+	left: 50%;
+	width: min(calc(100vw - 2rem), 42rem);
+	max-height: min(44rem, calc(100svh - 2rem));
+	padding: clamp(1.5rem, 4vw, 2.25rem);
+	overflow-y: auto;
+	border: 1px solid rgba(231, 229, 228, 0.16);
+	border-radius: 0.625rem;
+	background: #11110f;
+	box-shadow: 0 2rem 7rem rgba(0, 0, 0, 0.64);
+	transform: translate(-50%, -50%);
+}
+
+.instructions-dialog__content:focus {
+	outline: none;
+}
+
+.instructions-dialog__eyebrow {
+	margin-bottom: 0.625rem;
+	color: #817d76;
+	font-family: var(--font-mono);
+	font-size: 0.625rem;
+	font-weight: 600;
+	letter-spacing: 0.13em;
+	text-transform: uppercase;
+}
+
+.instructions-dialog__title {
+	max-width: 31rem;
+	margin: 0;
+	color: #ece9e4;
+	font-size: clamp(1.5rem, 4vw, 2rem);
+	font-weight: 600;
+	letter-spacing: -0.035em;
+	line-height: 1.08;
+}
+
+.instructions-dialog__description {
+	max-width: 36rem;
+	margin: 0.875rem 0 0;
+	color: #96918a;
+	font-size: 0.8125rem;
+	line-height: 1.65;
+}
+
+.instructions-dialog__steps {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1px;
+	margin: 1.75rem 0 0;
+	padding: 0;
+	overflow: hidden;
+	border: 1px solid rgba(231, 229, 228, 0.1);
+	border-radius: 0.375rem;
+	background: rgba(231, 229, 228, 0.1);
+	list-style: none;
+}
+
+.instructions-dialog__steps li {
+	min-width: 0;
+	padding: 1rem;
+	background: #0d0d0c;
+}
+
+.instructions-dialog__step-number {
+	display: block;
+	margin-bottom: 1.25rem;
+	color: #625f59;
+	font-family: var(--font-mono);
+	font-size: 0.625rem;
+}
+
+.instructions-dialog__steps strong {
+	color: #d8d4ce;
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
+.instructions-dialog__steps p {
+	margin: 0.5rem 0 0;
+	color: #77736d;
+	font-size: 0.6875rem;
+	line-height: 1.55;
+}
+
+.instructions-dialog__steps kbd {
+	font-family: var(--font-mono);
+	color: #aaa69f;
+}
+
+.instructions-dialog__note {
+	display: grid;
+	grid-template-columns: 6.5rem minmax(0, 1fr);
+	gap: 1rem;
+	margin-top: 1rem;
+	padding: 0.875rem 1rem;
+	border-left: 2px solid #77736d;
+	background: rgba(231, 229, 228, 0.035);
+}
+
+.instructions-dialog__note span {
+	color: #aaa69f;
+	font-size: 0.6875rem;
+	font-weight: 600;
+}
+
+.instructions-dialog__note p {
+	margin: 0;
+	color: #77736d;
+	font-size: 0.6875rem;
+	line-height: 1.55;
+}
+
+.instructions-dialog__footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1.5rem;
+	margin-top: 1.5rem;
+}
+
+.instructions-dialog__footer p {
+	max-width: 24rem;
+	margin: 0;
+	color: #625f59;
+	font-size: 0.6875rem;
+	line-height: 1.5;
+}
+
+.instructions-dialog__button {
+	flex: none;
+	min-height: 2.25rem;
+	padding: 0.375rem 0.875rem;
+	border: 1px solid transparent;
+	border-radius: 0.3125rem;
+	background: var(--accent);
+	color: var(--accent-ink);
+	font-size: 0.75rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition:
+		background-color 140ms ease,
+		transform 140ms ease;
+}
+
+.instructions-dialog__button:hover {
+	background: #eee9e1;
+	transform: translateY(-1px);
+}
+
+.instructions-dialog__button:focus-visible,
+.instructions-dialog__close:focus-visible {
+	outline: 2px solid rgba(231, 229, 228, 0.55);
+	outline-offset: 2px;
+}
+
+.instructions-dialog__close {
+	position: absolute;
+	top: 1rem;
+	right: 1rem;
+	display: grid;
+	place-items: center;
+	width: 2rem;
+	height: 2rem;
+	padding: 0;
+	border: 0;
+	border-radius: 0.25rem;
+	background: transparent;
+	color: #6f6b65;
+	cursor: pointer;
+}
+
+.instructions-dialog__close:hover {
+	background: rgba(231, 229, 228, 0.055);
+	color: #d6d3d1;
+}
+
 .command-dialog__overlay {
 	position: fixed;
 	z-index: 30;
@@ -1377,6 +1565,28 @@ select {
 
 	.file-toolbar__name {
 		width: min(11rem, 34vw);
+	}
+
+	.instructions-dialog__steps {
+		grid-template-columns: 1fr;
+	}
+
+	.instructions-dialog__step-number {
+		margin-bottom: 0.5rem;
+	}
+
+	.instructions-dialog__note {
+		grid-template-columns: 1fr;
+		gap: 0.375rem;
+	}
+
+	.instructions-dialog__footer {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.instructions-dialog__button {
+		width: 100%;
 	}
 }
 

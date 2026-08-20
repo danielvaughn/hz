@@ -2,11 +2,6 @@
 
 An experimental interface for building software by editing persistent pseudocode and synchronizing it with an AI-generated implementation.
 
-This repository is an npm workspace monorepo:
-
-- `packages/poc` contains the existing SvelteKit application.
-- `packages/electron` contains the Electron desktop application built with Svelte and Tailwind CSS.
-
 ## setup
 
 You need Node.js 22.19 or newer and access to a model provider supported by [Pi](https://github.com/earendil-works/pi).
@@ -37,13 +32,13 @@ Pi also recognizes credentials for OpenAI, Google, Azure OpenAI, Amazon Bedrock,
 
 ### authenticate with a subscription
 
-Run Pi through the local project installation:
+Run Pi through the web app's local installation:
 
 ```sh
-npx pi
+npx --workspace=poc pi
 ```
 
-Enter `/login`, choose a provider, and complete its authentication flow. Exit Pi when authentication is complete, then start Huzzah with `npm run dev`.
+Enter `/login`, choose a provider, and complete its authentication flow. Exit Pi when authentication is complete, then start the web app with `npm run dev`.
 
 ### choose a model
 
