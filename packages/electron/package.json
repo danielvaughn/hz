@@ -22,5 +22,10 @@
 		"tailwindcss": "^4.3.3",
 		"typescript": "^6.0.3",
 		"vite": "^7.3.6"
+	},
+	"dependencies": {
+		"@codemirror/state": "^6.7.1",
+		"@codemirror/view": "^6.43.9",
+		"codemirror": "^6.0.2"
 	}
 }
