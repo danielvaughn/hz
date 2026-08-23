@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import type {
 		FilePreview,
 		HuzzahProjectState,
@@ -37,6 +37,10 @@
 	let initializingProject = $state(false);
 	let loadingSyncSummary = $state(false);
 	let syncSummary = $state<SyncSummary | null>(null);
+	let newFileOpen = $state(false);
+	let newFilePath = $state('');
+	let newFileError = $state('');
+	let creatingFile = $state(false);
 
 	let repository = $derived(repositoryState.status === 'ready' ? repositoryState.repository : null);
 	let activeTab = $derived(tabs.find((tab) => tab.path === activePath) ?? null);
@@ -61,6 +65,8 @@
 		repositoryState = nextState;
 		repositoryError = '';
 		if (nextState.status === 'ready') {
+			newFileOpen = false;
+			syncSummary = null;
 			tabs = [];
 			activePath = null;
 			expandedPaths = new Set(nextState.repository.tree.filter((node) => node.type === 'directory').slice(0, 2).map((node) => node.path));
@@ -109,12 +115,63 @@
 			repositoryState = { status: 'empty' };
 			projectState = null;
 			syncSummary = null;
+			newFileOpen = false;
 			tabs = [];
 			activePath = null;
 			expandedPaths = new Set();
 			repositoryError = '';
 		} catch (error) {
 			repositoryError = errorMessage(error);
+		}
+	}
+
+	function suggestedFilePath(): string {
+		if (projectState?.config.status === 'ready' && projectState.config.specifications.length === 0) {
+			return `${projectState.config.specDirectory}/untitled.hz`;
+		}
+		const directory = activePath?.split('/').slice(0, -1).join('/') ?? '';
+		const extension = activePath?.toLowerCase().endsWith('.hz') ? '.hz' : '.txt';
+		return `${directory ? `${directory}/` : ''}untitled${extension}`;
+	}
+
+	function showNewFile(): void {
+		newFilePath = suggestedFilePath();
+		newFileError = '';
+		newFileOpen = true;
+		void tick().then(() => {
+			const input = document.querySelector<HTMLInputElement>('#new-file-path');
+			input?.focus();
+			input?.select();
+		});
+	}
+
+	async function submitNewFile(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		if (!repository || creatingFile || !newFilePath.trim()) return;
+		creatingFile = true;
+		newFileError = '';
+		try {
+			const preview = await window.desktop.createFile({
+				repositoryPath: repository.path,
+				path: newFilePath
+			});
+			const pathParts = preview.path.split('/');
+			const directories = pathParts.slice(0, -1).map((_, index) => pathParts.slice(0, index + 1).join('/'));
+			expandedPaths = new Set([...expandedPaths, ...directories]);
+			tabs = [...tabs, {
+				path: preview.path,
+				name: pathParts.at(-1) ?? preview.path,
+				state: 'ready',
+				preview,
+				buffer: preview.content,
+				dirty: false
+			}];
+			activePath = preview.path;
+			newFileOpen = false;
+		} catch (error) {
+			newFileError = errorMessage(error);
+		} finally {
+			creatingFile = false;
 		}
 	}
 
@@ -303,6 +360,7 @@
 
 	onMount(() => {
 		const handleKeydown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape' && newFileOpen) { newFileOpen = false; return; }
 			if (event.key === 'Escape' && syncSummary) { syncSummary = null; return; }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') { event.preventDefault(); void chooseRepository(); }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'w' && activePath) { event.preventDefault(); void closeTab(new MouseEvent('click'), activePath); }
@@ -333,6 +391,7 @@
 			{#if repository}<span class="status-dot" aria-hidden="true"></span><div><strong>{repository.name}</strong><span>{repository.path}</span></div>{:else}<span>NO REPOSITORY OPEN</span>{/if}
 		</div>
 		<div class="repository-actions">
+			{#if repository}<button class="project-button new-file-button" onclick={showNewFile}>+ NEW FILE</button>{/if}
 			{#if repository && projectState?.config.status === 'missing'}<button class="project-button initialize-button" onclick={initializeProject} disabled={initializingProject}>{initializingProject ? 'INITIALIZING…' : 'INITIALIZE'}</button>{/if}
 			{#if repository}<button class="project-button sync-button" class:available={canSync} onclick={openSyncSummary} disabled={!canSync || loadingSyncSummary}>{loadingSyncSummary ? 'CHECKING…' : 'SYNC'}{#if specificationChanges.length > 0}<span>{specificationChanges.length}</span>{/if}</button>{/if}
 			{#if repository}<button class="close-repository-button" onclick={closeRepository}>CLOSE</button>{/if}
@@ -405,6 +464,20 @@
 		</section>
 	{/if}
 </main>
+
+{#if newFileOpen}
+	<div class="modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget && !creatingFile) newFileOpen = false; }}>
+		<div class="new-file-dialog" role="dialog" aria-modal="true" aria-labelledby="new-file-title">
+			<form onsubmit={submitNewFile}>
+				<header><div><span>FILES / CREATE</span><h2 id="new-file-title">New file</h2></div><button type="button" aria-label="Close new file dialog" onclick={() => newFileOpen = false} disabled={creatingFile}>×</button></header>
+				<label for="new-file-path">PATH RELATIVE TO REPOSITORY</label>
+				<input id="new-file-path" bind:value={newFilePath} spellcheck="false" autocomplete="off" disabled={creatingFile} />
+				{#if newFileError}<p class="new-file-error" role="alert">{newFileError}</p>{:else}<p>Missing parent directories will be created automatically.</p>{/if}
+				<footer><button type="button" onclick={() => newFileOpen = false} disabled={creatingFile}>CANCEL</button><button class="primary" type="submit" disabled={creatingFile || !newFilePath.trim()}>{creatingFile ? 'CREATING…' : 'CREATE FILE'}</button></footer>
+			</form>
+		</div>
+	</div>
+{/if}
 
 {#if syncSummary}
 	<div class="modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) syncSummary = null; }}>

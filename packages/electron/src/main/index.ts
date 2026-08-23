@@ -5,6 +5,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 
 import type {
+	CreateFileRequest,
 	FilePreview,
 	Repository,
 	RepositoryChange,
@@ -311,6 +312,73 @@ function isSaveFileRequest(value: unknown): value is SaveFileRequest {
 		typeof request.content === 'string' && typeof request.expectedRevision === 'string';
 }
 
+function isCreateFileRequest(value: unknown): value is CreateFileRequest {
+	if (!value || typeof value !== 'object') return false;
+	const request = value as Partial<CreateFileRequest>;
+	return typeof request.repositoryPath === 'string' && typeof request.path === 'string';
+}
+
+async function createFile(request: CreateFileRequest): Promise<Extract<FilePreview, { kind: 'text' }>> {
+	if (!repositoryRoot || request.repositoryPath !== repositoryRoot) {
+		throw new Error('The repository changed before this file could be created.');
+	}
+	const path = request.path.trim().split('\\').join('/');
+	if (!path || path.endsWith('/')) throw new Error('Enter a file path including its name.');
+	const parts = path.split('/');
+	if (parts.some((part) => part === '.git' || part === 'node_modules')) {
+		throw new Error('Files cannot be created in protected repository directories.');
+	}
+	if (parts.at(-1)?.startsWith('.huzzah-save-')) {
+		throw new Error('That file name is reserved for Huzzah saves.');
+	}
+
+	const target = resolveRepositoryPath(path);
+	const normalizedPath = relative(repositoryRoot, target).split(sep).join('/');
+	if (!normalizedPath) throw new Error('Enter a file path including its name.');
+	if (!TEXT_EXTENSIONS.has(extname(normalizedPath).toLowerCase())) {
+		throw new Error('Only supported text file types can be created in Huzzah.');
+	}
+	const parent = dirname(target);
+	let existingAncestor = parent;
+	while (existingAncestor !== repositoryRoot) {
+		try {
+			await lstat(existingAncestor);
+			break;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+			existingAncestor = dirname(existingAncestor);
+		}
+	}
+	const canonicalAncestor = await realpath(existingAncestor);
+	if (!isInsideRepository(canonicalAncestor)) {
+		throw new Error('The requested file resolves outside the repository.');
+	}
+	const ancestorInfo = await lstat(canonicalAncestor);
+	if (!ancestorInfo.isDirectory()) throw new Error('A parent path is not a directory.');
+
+	await mkdir(parent, { recursive: true });
+	const canonicalParent = await realpath(parent);
+	if (!isInsideRepository(canonicalParent)) {
+		throw new Error('The requested file resolves outside the repository.');
+	}
+	const canonicalParts = relative(repositoryRoot, canonicalParent).split(sep);
+	if (canonicalParts.some((part) => part === '.git' || part === 'node_modules')) {
+		throw new Error('Files cannot be created in protected repository directories.');
+	}
+	try {
+		await writeFile(target, '', { encoding: 'utf8', flag: 'wx' });
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+			throw new Error('A file or directory already exists at that path.');
+		}
+		throw error;
+	}
+	const preview = await previewFile(normalizedPath);
+	if (preview.kind !== 'text') throw new Error('The new file type is not editable.');
+	projectService.scheduleRefresh(0);
+	return preview;
+}
+
 async function saveFile(request: SaveFileRequest): Promise<SaveFileResult> {
 	if (!repositoryRoot || request.repositoryPath !== repositoryRoot) {
 		throw new Error('The repository changed before this file could be saved.');
@@ -370,6 +438,12 @@ function registerDesktopIpc(): void {
 	ipcMain.handle('repository:read-file', (_event, path: unknown) => {
 		if (typeof path !== 'string' || path.length === 0) throw new Error('A file path is required.');
 		return previewFile(path);
+	});
+	ipcMain.handle('repository:create-file', (_event, request: unknown) => {
+		if (!isCreateFileRequest(request) || request.path.trim().length === 0) {
+			throw new Error('A valid new file request is required.');
+		}
+		return createFile(request);
 	});
 	ipcMain.handle('repository:write-file', (_event, request: unknown) => {
 		if (!isSaveFileRequest(request) || request.path.length === 0) {

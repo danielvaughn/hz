@@ -167,6 +167,9 @@ button:focus-visible,
 .initialize-button {
   color: #c9a96f;
 }
+.new-file-button {
+  color: #9a9c93;
+}
 .sync-button.available {
   color: #e2bd7a;
   background: rgba(217, 164, 80, 0.08);
@@ -1033,6 +1036,100 @@ kbd {
   cursor: pointer;
   font: 700 8px/1 var(--font-mono);
   letter-spacing: 0.12em;
+}
+.new-file-dialog {
+  width: min(520px, 100%);
+  border: 1px solid #3b3d36;
+  background: #141512;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+.new-file-dialog form {
+  display: flex;
+  flex-direction: column;
+}
+.new-file-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.new-file-dialog header span {
+  color: var(--accent);
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.17em;
+}
+.new-file-dialog h2 {
+  margin: 9px 0 0;
+  color: var(--text);
+  font: 600 22px/1.2 var(--font-display);
+}
+.new-file-dialog header button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 20px;
+}
+.new-file-dialog label {
+  margin: 21px 24px 9px;
+  color: var(--text-muted);
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.12em;
+}
+.new-file-dialog input {
+  height: 39px;
+  margin: 0 24px;
+  padding: 0 12px;
+  border: 1px solid #3a3c35;
+  border-radius: 1px;
+  outline: none;
+  background: #0f100e;
+  color: #d3d1ca;
+  font: 11px/1 var(--font-mono);
+}
+.new-file-dialog input:focus {
+  border-color: #866c3b;
+  box-shadow: 0 0 0 2px rgba(217, 164, 80, 0.08);
+}
+.new-file-dialog > form > p {
+  min-height: 32px;
+  margin: 9px 24px 3px;
+  color: var(--text-muted);
+  font: 9px/1.45 var(--font-mono);
+}
+.new-file-dialog > form > p.new-file-error {
+  color: #d58b77;
+}
+.new-file-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+}
+.new-file-dialog footer button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid #3d3f38;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+}
+.new-file-dialog footer button.primary {
+  border-color: #6f5a32;
+  background: var(--accent-soft);
+  color: #dfb873;
+}
+.new-file-dialog button:disabled,
+.new-file-dialog input:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 .error-notice {
   border-color: var(--danger);

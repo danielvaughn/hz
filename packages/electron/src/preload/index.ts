@@ -13,6 +13,7 @@ const desktop: DesktopApi = Object.freeze({
 	openRepository: () => ipcRenderer.invoke('repository:open') as Promise<RepositoryState | null>,
 	closeRepository: () => ipcRenderer.invoke('repository:close') as Promise<void>,
 	readFile: (path) => ipcRenderer.invoke('repository:read-file', path),
+	createFile: (request) => ipcRenderer.invoke('repository:create-file', request),
 	writeFile: (request) => ipcRenderer.invoke('repository:write-file', request),
 	getProjectState: () => ipcRenderer.invoke('project:get-state'),
 	initializeProject: () => ipcRenderer.invoke('project:initialize'),

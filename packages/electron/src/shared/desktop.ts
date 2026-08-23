@@ -43,6 +43,11 @@ export type SaveFileResult =
 	| { status: 'saved'; preview: Extract<FilePreview, { kind: 'text' }> }
 	| { status: 'conflict'; disk: FilePreview | null };
 
+export type CreateFileRequest = {
+	repositoryPath: string;
+	path: string;
+};
+
 export type RepositoryChange =
 	| { repositoryPath: string; kind: 'tree'; tree: RepositoryTreeNode[] }
 	| { repositoryPath: string; kind: 'file'; path: string; change: 'changed' | 'deleted' };
@@ -84,6 +89,7 @@ export type DesktopApi = Readonly<{
 	openRepository: () => Promise<RepositoryState | null>;
 	closeRepository: () => Promise<void>;
 	readFile: (path: string) => Promise<FilePreview>;
+	createFile: (request: CreateFileRequest) => Promise<Extract<FilePreview, { kind: 'text' }>>;
 	writeFile: (request: SaveFileRequest) => Promise<SaveFileResult>;
 	onRepositoryChange: (listener: (change: RepositoryChange) => void) => () => void;
 	getProjectState: () => Promise<HuzzahProjectState | null>;
