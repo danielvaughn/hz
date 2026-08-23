@@ -22,6 +22,7 @@ export type FilePreview =
 			path: string;
 			content: string;
 			size: number;
+			revision: string;
 		}
 	| {
 			kind: 'unsupported';
@@ -31,10 +32,27 @@ export type FilePreview =
 			reason: string;
 		};
 
+export type SaveFileRequest = {
+	repositoryPath: string;
+	path: string;
+	content: string;
+	expectedRevision: string;
+};
+
+export type SaveFileResult =
+	| { status: 'saved'; preview: Extract<FilePreview, { kind: 'text' }> }
+	| { status: 'conflict'; disk: FilePreview | null };
+
+export type RepositoryChange =
+	| { repositoryPath: string; kind: 'tree'; tree: RepositoryTreeNode[] }
+	| { repositoryPath: string; kind: 'file'; path: string; change: 'changed' | 'deleted' };
+
 export type DesktopApi = Readonly<{
 	platform: string;
 	getRepositoryState: () => Promise<RepositoryState>;
 	openRepository: () => Promise<RepositoryState | null>;
 	closeRepository: () => Promise<void>;
 	readFile: (path: string) => Promise<FilePreview>;
+	writeFile: (request: SaveFileRequest) => Promise<SaveFileResult>;
+	onRepositoryChange: (listener: (change: RepositoryChange) => void) => () => void;
 }>;

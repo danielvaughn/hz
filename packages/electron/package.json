@@ -8,7 +8,8 @@
 		"dev": "electron-vite dev",
 		"build": "npm run check && electron-vite build",
 		"preview": "electron-vite preview",
-		"check": "tsc --noEmit -p tsconfig.node.json && svelte-check --tsconfig ./tsconfig.web.json"
+		"check": "tsc --noEmit -p tsconfig.node.json && svelte-check --tsconfig ./tsconfig.web.json",
+		"test": "node --experimental-strip-types --test tests/*.test.ts"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",
@@ -24,6 +25,7 @@
 		"vite": "^7.3.6"
 	},
 	"dependencies": {
+		"@codemirror/language-data": "^6.5.2",
 		"@codemirror/state": "^6.7.1",
 		"@codemirror/view": "^6.43.9",
 		"codemirror": "^6.0.2"

@@ -1,11 +1,25 @@
 <script lang="ts">
-	import { EditorState } from '@codemirror/state';
+	import { LanguageDescription } from '@codemirror/language';
+	import { languages } from '@codemirror/language-data';
+	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView } from '@codemirror/view';
 	import { basicSetup } from 'codemirror';
 	import { onMount } from 'svelte';
 
-	let { content }: { content: string } = $props();
+	let { content, path, onChange }: { content: string; path: string; onChange?: (content: string) => void } = $props();
 	let host: HTMLDivElement;
+	let view: EditorView | null = null;
+	const language = new Compartment();
+	let languageRequest = 0;
+
+	async function applyLanguage(filePath: string): Promise<void> {
+		const request = ++languageRequest;
+		const lookupPath = filePath.toLowerCase().endsWith('.hz') ? `${filePath}.md` : filePath;
+		const description = LanguageDescription.matchFilename(languages, lookupPath);
+		const support = description ? await description.load() : [];
+		if (request !== languageRequest || !view) return;
+		view.dispatch({ effects: language.reconfigure(support) });
+	}
 
 	const theme = EditorView.theme(
 		{
@@ -18,21 +32,32 @@
 			'.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'rgba(217, 164, 80, 0.035)' },
 			'&.cm-focused': { outline: 'none' },
 			'.cm-selectionBackground, ::selection': { backgroundColor: 'rgba(217, 164, 80, 0.18) !important' },
-			'.cm-cursor': { display: 'none' },
+			'.cm-cursor': { borderLeftColor: '#d9a450' },
 			'.cm-foldPlaceholder': { backgroundColor: '#24251f', border: '1px solid #35372f', color: '#a6a89f' }
 		},
 		{ dark: true }
 	);
 
 	onMount(() => {
-		const view = new EditorView({
+		view = new EditorView({
 			parent: host,
 			state: EditorState.create({
 				doc: content,
-				extensions: [basicSetup, EditorState.readOnly.of(true), EditorView.editable.of(false), theme]
+				extensions: [basicSetup, language.of([]), theme, EditorView.updateListener.of((update) => {
+					if (update.docChanged) onChange?.(update.state.doc.toString());
+				})]
 			})
 		});
-		return () => view.destroy();
+		return () => { view?.destroy(); view = null; };
+	});
+
+	$effect(() => {
+		if (!view || view.state.doc.toString() === content) return;
+		view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } });
+	});
+
+	$effect(() => {
+		if (view) void applyLanguage(path);
 	});
 </script>
 

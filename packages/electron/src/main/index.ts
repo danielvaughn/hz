@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { watch, type FSWatcher } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,9 +7,13 @@ import { fileURLToPath } from 'node:url';
 import type {
 	FilePreview,
 	Repository,
+	RepositoryChange,
 	RepositoryState,
-	RepositoryTreeNode
+	RepositoryTreeNode,
+	SaveFileRequest,
+	SaveFileResult
 } from '../shared/desktop';
+import { atomicSaveText, contentRevision } from './atomic-save';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const SETTINGS_FILE = 'desktop-settings.json';
@@ -56,6 +61,11 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 let repositoryRoot: string | null = null;
+let repositoryWatcher: FSWatcher | null = null;
+let watcherTimer: NodeJS.Timeout | null = null;
+let watcherGeneration = 0;
+const pendingWatcherPaths = new Set<string>();
+const internalWrites = new Map<string, number>();
 
 type DesktopSettings = { recentRepository?: string };
 
@@ -110,12 +120,80 @@ async function loadRepository(path: string): Promise<Repository> {
 	const resolvedPath = await realpath(path);
 	const info = await stat(resolvedPath);
 	if (!info.isDirectory()) throw new Error('The selected path is not a directory.');
+	const tree = await listDirectory(resolvedPath);
 	repositoryRoot = resolvedPath;
+	startRepositoryWatcher(resolvedPath);
 	return {
 		name: basename(resolvedPath),
 		path: resolvedPath,
-		tree: await listDirectory(resolvedPath)
+		tree
 	};
+}
+
+function stopRepositoryWatcher(): void {
+	watcherGeneration += 1;
+	repositoryWatcher?.close();
+	repositoryWatcher = null;
+	if (watcherTimer) clearTimeout(watcherTimer);
+	watcherTimer = null;
+	pendingWatcherPaths.clear();
+	internalWrites.clear();
+}
+
+function emitRepositoryChange(change: RepositoryChange): void {
+	for (const window of BrowserWindow.getAllWindows()) {
+		if (!window.isDestroyed()) window.webContents.send('repository:change', change);
+	}
+}
+
+function normalizeWatcherPath(path: string | Buffer | null): string | null {
+	if (!path) return null;
+	const value = path.toString().split(sep).join('/');
+	if (!value || value.startsWith('../') || isAbsolute(value)) return null;
+	return value;
+}
+
+function startRepositoryWatcher(root: string): void {
+	stopRepositoryWatcher();
+	const generation = watcherGeneration;
+	repositoryWatcher = watch(root, { recursive: true }, (_eventType, filename) => {
+		if (generation !== watcherGeneration || repositoryRoot !== root) return;
+		const path = normalizeWatcherPath(filename);
+		if (path?.split('/').some((part) => SKIPPED_DIRECTORIES.has(part))) return;
+		if (path?.split('/').some((part) => part.startsWith('.huzzah-save-'))) return;
+		if (path) {
+			const suppressedUntil = internalWrites.get(path);
+			if (suppressedUntil && suppressedUntil > Date.now()) return;
+			internalWrites.delete(path);
+			pendingWatcherPaths.add(path);
+		}
+		if (watcherTimer) clearTimeout(watcherTimer);
+		watcherTimer = setTimeout(() => void flushWatcherChanges(root, generation), 120);
+	});
+	repositoryWatcher.on('error', () => {
+		// Individual reads and writes still report actionable errors if watching becomes unavailable.
+	});
+}
+
+async function flushWatcherChanges(root: string, generation: number): Promise<void> {
+	watcherTimer = null;
+	if (generation !== watcherGeneration || repositoryRoot !== root) return;
+	const paths = [...pendingWatcherPaths];
+	pendingWatcherPaths.clear();
+	try {
+		emitRepositoryChange({ repositoryPath: root, kind: 'tree', tree: await listDirectory(root) });
+	} catch {
+		return;
+	}
+	for (const path of paths) {
+		let change: 'changed' | 'deleted' = 'changed';
+		try {
+			await lstat(resolveRepositoryPath(path));
+		} catch {
+			change = 'deleted';
+		}
+		emitRepositoryChange({ repositoryPath: root, kind: 'file', path, change });
+	}
 }
 
 async function getRepositoryState(): Promise<RepositoryState> {
@@ -124,6 +202,7 @@ async function getRepositoryState(): Promise<RepositoryState> {
 	try {
 		return { status: 'ready', repository: await loadRepository(recentRepository) };
 	} catch {
+		stopRepositoryWatcher();
 		repositoryRoot = null;
 		return { status: 'missing', path: recentRepository };
 	}
@@ -205,7 +284,49 @@ async function previewFile(path: string): Promise<FilePreview> {
 			reason: 'This file type is shown in plain read-only mode.'
 		};
 	}
-	return { kind: 'text', path, content, size: fileInfo.size };
+	return { kind: 'text', path, content, size: fileInfo.size, revision: contentRevision(content) };
+}
+
+function isSaveFileRequest(value: unknown): value is SaveFileRequest {
+	if (!value || typeof value !== 'object') return false;
+	const request = value as Partial<SaveFileRequest>;
+	return typeof request.repositoryPath === 'string' && typeof request.path === 'string' &&
+		typeof request.content === 'string' && typeof request.expectedRevision === 'string';
+}
+
+async function saveFile(request: SaveFileRequest): Promise<SaveFileResult> {
+	if (!repositoryRoot || request.repositoryPath !== repositoryRoot) {
+		throw new Error('The repository changed before this file could be saved.');
+	}
+	const target = resolveRepositoryPath(request.path);
+	let disk: FilePreview | null;
+	try {
+		disk = await previewFile(request.path);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'conflict', disk: null };
+		throw error;
+	}
+	if (disk.kind !== 'text') throw new Error('Only supported text files can be edited.');
+	let result;
+	try {
+		result = await atomicSaveText({
+			target,
+			content: request.content,
+			expectedRevision: request.expectedRevision,
+			maxBytes: MAX_PREVIEW_BYTES,
+			beforeRename: () => internalWrites.set(request.path, Date.now() + 1000)
+		});
+	} catch (error) {
+		internalWrites.delete(request.path);
+		throw error;
+	}
+	if (result.status === 'conflict') {
+		try { disk = await previewFile(request.path); } catch { disk = null; }
+		return { status: 'conflict', disk };
+	}
+	const preview = await previewFile(request.path);
+	if (preview.kind !== 'text') throw new Error('The saved file could not be read back as text.');
+	return { status: 'saved', preview };
 }
 
 function registerDesktopIpc(): void {
@@ -224,11 +345,18 @@ function registerDesktopIpc(): void {
 		return { status: 'ready', repository };
 	});
 	ipcMain.handle('repository:close', () => {
+		stopRepositoryWatcher();
 		repositoryRoot = null;
 	});
 	ipcMain.handle('repository:read-file', (_event, path: unknown) => {
 		if (typeof path !== 'string' || path.length === 0) throw new Error('A file path is required.');
 		return previewFile(path);
+	});
+	ipcMain.handle('repository:write-file', (_event, request: unknown) => {
+		if (!isSaveFileRequest(request) || request.path.length === 0) {
+			throw new Error('A valid file save request is required.');
+		}
+		return saveFile(request);
 	});
 }
 
@@ -272,5 +400,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+	stopRepositoryWatcher();
 	if (process.platform !== 'darwin') app.quit();
 });

@@ -404,6 +404,9 @@ kbd {
   background: var(--accent);
   content: "";
 }
+.tab.attention::after {
+  background: var(--danger);
+}
 .tab-select {
   display: flex;
   align-items: center;
@@ -423,6 +426,11 @@ kbd {
   height: 8px;
   flex: 0 0 auto;
   border: 1px solid currentColor;
+}
+.tab-file-mark.dirty {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(217, 164, 80, 0.12);
 }
 .tab-select > span:nth-child(2) {
   overflow: hidden;
@@ -482,10 +490,80 @@ kbd {
   font-size: 8px;
   letter-spacing: 0.09em;
 }
+.file-meta.problem {
+  color: var(--danger);
+}
 .editor-content {
   min-height: 0;
   overflow: hidden;
   background: #121311;
+}
+
+.text-editor-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+.conflict-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 58px;
+  padding: 10px 16px 10px 18px;
+  border-bottom: 1px solid rgba(210, 123, 101, 0.35);
+  background: rgba(210, 123, 101, 0.09);
+}
+.conflict-banner > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.conflict-banner strong {
+  color: #dfa18f;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+}
+.conflict-banner span {
+  overflow: hidden;
+  color: #a5a59d;
+  font: 10px/1.35 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conflict-banner.save-error {
+  border-bottom-color: rgba(217, 164, 80, 0.3);
+  background: rgba(217, 164, 80, 0.075);
+}
+.conflict-banner.save-error strong {
+  color: var(--accent);
+}
+.banner-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 7px;
+}
+.banner-actions button {
+  height: 29px;
+  padding: 0 11px;
+  border: 1px solid #484942;
+  border-radius: 2px;
+  background: #191a17;
+  color: #a3a49d;
+  cursor: pointer;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+}
+.banner-actions button:hover {
+  color: var(--text);
+  border-color: #65665e;
+}
+.banner-actions button.primary {
+  border-color: #886b3c;
+  background: rgba(217, 164, 80, 0.12);
+  color: #dfb873;
 }
 
 .welcome-state {
