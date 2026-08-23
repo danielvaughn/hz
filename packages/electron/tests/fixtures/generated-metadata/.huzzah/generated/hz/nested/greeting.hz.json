@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "specification": {
+    "path": "hz/nested/greeting.hz",
+    "hash": "18cbc4da7105865be51076d195caa582a203c12858741fc6badbfee434810b70"
+  },
+  "highlighting": {
+    "taxonomyVersion": 1,
+    "marks": [
+      { "from": 0, "to": 6, "category": "action", "text": "Create" }
+    ]
+  },
+  "sourceMaps": [
+    {
+      "path": "src/greeting.ts",
+      "hash": "0b26eeb0449337856835ba66be5be5327b016226a2b9d5b994f04fa088c579f9",
+      "mappings": [
+        {
+          "specification": {
+            "from": { "line": 1, "column": 0 },
+            "to": { "line": 1, "column": 15 }
+          },
+          "source": [
+            {
+              "from": { "line": 1, "column": 0 },
+              "to": { "line": 1, "column": 32 }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

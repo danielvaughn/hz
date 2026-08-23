@@ -2,11 +2,13 @@ import type {
 	GitState,
 	HuzzahConfigState,
 	HuzzahProjectState,
+	GeneratedMetadataState,
 	SpecificationChange,
 	SyncSummary
 } from '../shared/desktop';
 import { GitService, type GitFileChange, type GitRepositoryState } from './git-service';
 import { discoverHuzzahConfig, initializeHuzzahProject } from './huzzah-config';
+import { loadGeneratedMetadata } from './generated-metadata';
 
 export class ProjectService {
 	private repositoryPath: string | null = null;
@@ -101,6 +103,15 @@ export class ProjectService {
 			head: state.git.head,
 			changes: state.git.changes
 		};
+	}
+
+	async getGeneratedMetadata(specificationPath: string): Promise<GeneratedMetadataState> {
+		const repositoryPath = this.requireRepository();
+		const state = this.state?.config.status === 'ready' ? this.state : await this.refresh();
+		if (state.config.status !== 'ready' || !state.config.specifications.includes(specificationPath)) {
+			throw new Error('Generated metadata is available only for configured specification files.');
+		}
+		return loadGeneratedMetadata(repositoryPath, specificationPath);
 	}
 
 	private requireRepository(): string {

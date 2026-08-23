@@ -8,6 +8,7 @@
 		"strict": true,
 		"noEmit": true,
 		"isolatedModules": true,
+		"allowImportingTsExtensions": true,
 		"verbatimModuleSyntax": true,
 		"skipLibCheck": true
 	},

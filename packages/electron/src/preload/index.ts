@@ -19,6 +19,7 @@ const desktop: DesktopApi = Object.freeze({
 	initializeProject: () => ipcRenderer.invoke('project:initialize'),
 	refreshProjectState: () => ipcRenderer.invoke('project:refresh'),
 	getSyncSummary: () => ipcRenderer.invoke('project:get-sync-summary'),
+	getGeneratedMetadata: (specificationPath) => ipcRenderer.invoke('project:get-generated-metadata', specificationPath),
 	onRepositoryChange: (listener) => {
 		const handler = (_event: Electron.IpcRendererEvent, change: RepositoryChange) => listener(change);
 		ipcRenderer.on('repository:change', handler);

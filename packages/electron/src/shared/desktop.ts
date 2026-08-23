@@ -83,6 +83,74 @@ export type SyncSummary = {
 	changes: SpecificationChange[];
 };
 
+export const GENERATED_ARTIFACT_VERSION = 1 as const;
+export const HIGHLIGHT_TAXONOMY_VERSION = 1 as const;
+
+export const HIGHLIGHT_CATEGORIES = [
+	'action',
+	'object',
+	'condition',
+	'value',
+	'identifier',
+	'control',
+	'operator',
+	'type',
+	'comment',
+	'directive',
+	'resource',
+	'modifier'
+] as const;
+
+export type HighlightCategory = (typeof HIGHLIGHT_CATEGORIES)[number];
+
+export type HighlightMark = {
+	from: number;
+	to: number;
+	category: HighlightCategory;
+	text: string;
+};
+
+export type SourcePosition = { line: number; column: number };
+export type SourceRange = { from: SourcePosition; to: SourcePosition };
+
+export type SourceMapping = {
+	specification: SourceRange;
+	source: SourceRange[];
+};
+
+export type GeneratedArtifact = {
+	version: typeof GENERATED_ARTIFACT_VERSION;
+	specification: { path: string; hash: string };
+	highlighting?: {
+		taxonomyVersion: typeof HIGHLIGHT_TAXONOMY_VERSION;
+		marks: HighlightMark[];
+	};
+	sourceMaps: Array<{
+		path: string;
+		hash: string;
+		mappings: SourceMapping[];
+	}>;
+};
+
+export type MetadataStatus = 'current' | 'stale' | 'missing' | 'invalid';
+
+export type GeneratedMetadataState = {
+	specificationPath: string;
+	artifactPath: string;
+	artifactStatus: 'ready' | 'missing' | 'invalid';
+	message?: string;
+	highlighting: {
+		status: MetadataStatus;
+		marks?: HighlightMark[];
+	};
+	sourceMaps: Array<{
+		path: string;
+		status: Exclude<MetadataStatus, 'missing'> | 'missing';
+		mappings?: SourceMapping[];
+		message?: string;
+	}>;
+};
+
 export type DesktopApi = Readonly<{
 	platform: string;
 	getRepositoryState: () => Promise<RepositoryState>;
@@ -96,5 +164,6 @@ export type DesktopApi = Readonly<{
 	initializeProject: () => Promise<HuzzahProjectState>;
 	refreshProjectState: () => Promise<HuzzahProjectState>;
 	getSyncSummary: () => Promise<SyncSummary>;
+	getGeneratedMetadata: (specificationPath: string) => Promise<GeneratedMetadataState>;
 	onProjectStateChange: (listener: (state: HuzzahProjectState) => void) => () => void;
 }>;

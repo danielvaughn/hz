@@ -2,6 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import type {
 		FilePreview,
+		GeneratedMetadataState,
 		HuzzahProjectState,
 		RepositoryChange,
 		RepositoryState,
@@ -23,6 +24,9 @@
 		saving?: boolean;
 		saveError?: string;
 		conflict?: FilePreview | null;
+		metadata?: GeneratedMetadataState;
+		metadataLoading?: boolean;
+		metadataRequest?: number;
 	};
 	type VisibleNode = RepositoryTreeNode & { depth: number };
 
@@ -41,6 +45,7 @@
 	let newFilePath = $state('');
 	let newFileError = $state('');
 	let creatingFile = $state(false);
+	let metadataRequest = 0;
 
 	let repository = $derived(repositoryState.status === 'ready' ? repositoryState.repository : null);
 	let activeTab = $derived(tabs.find((tab) => tab.path === activePath) ?? null);
@@ -78,7 +83,10 @@
 	async function loadProjectState(repositoryPath: string): Promise<void> {
 		try {
 			const state = await window.desktop.getProjectState();
-			if (state?.repositoryPath === repositoryPath && repository?.path === repositoryPath) projectState = state;
+			if (state?.repositoryPath === repositoryPath && repository?.path === repositoryPath) {
+				projectState = state;
+				void refreshOpenMetadata();
+			}
 		} catch (error) {
 			projectActionError = errorMessage(error);
 		}
@@ -237,6 +245,39 @@
 		expandedPaths = next;
 	}
 
+	function isSpecification(path: string): boolean {
+		return projectState?.config.status === 'ready' && projectState.config.specifications.includes(path);
+	}
+
+	async function loadTabMetadata(path: string): Promise<void> {
+		if (!isSpecification(path) || !tabs.some((tab) => tab.path === path)) return;
+		const request = ++metadataRequest;
+		tabs = tabs.map((tab) => tab.path === path ? { ...tab, metadataLoading: true, metadataRequest: request } : tab);
+		try {
+			const metadata = await window.desktop.getGeneratedMetadata(path);
+			tabs = tabs.map((tab) => tab.path === path && tab.metadataRequest === request
+				? { ...tab, metadata: tab.dirty ? staleMetadata(metadata) : metadata, metadataLoading: false }
+				: tab);
+		} catch {
+			tabs = tabs.map((tab) => tab.path === path && tab.metadataRequest === request ? { ...tab, metadataLoading: false } : tab);
+		}
+	}
+
+	async function refreshOpenMetadata(): Promise<void> {
+		await Promise.all(tabs.filter((tab) => isSpecification(tab.path)).map((tab) => loadTabMetadata(tab.path)));
+	}
+
+	function staleMetadata(metadata: GeneratedMetadataState | undefined): GeneratedMetadataState | undefined {
+		if (!metadata || metadata.artifactStatus !== 'ready') return metadata;
+		return {
+			...metadata,
+			highlighting: metadata.highlighting.status === 'current' ? { status: 'stale' } : metadata.highlighting,
+			sourceMaps: metadata.sourceMaps.map((target) => target.status === 'current'
+				? { path: target.path, status: 'stale' }
+				: target)
+		};
+	}
+
 	async function openFile(node: RepositoryTreeNode): Promise<void> {
 		if (node.type !== 'file') return;
 		if (tabs.some((tab) => tab.path === node.path)) { activePath = node.path; return; }
@@ -245,6 +286,7 @@
 		try {
 			const preview = await window.desktop.readFile(node.path);
 			tabs = tabs.map((tab) => tab.path === node.path ? { ...tab, state: 'ready', preview, buffer: preview.kind === 'text' ? preview.content : undefined } : tab);
+			void loadTabMetadata(node.path);
 		} catch (error) {
 			tabs = tabs.map((tab) => tab.path === node.path ? { ...tab, state: 'error', error: errorMessage(error) } : tab);
 		}
@@ -254,7 +296,14 @@
 		const tab = tabs.find((candidate) => candidate.path === path);
 		if (!tab || tab.preview?.kind !== 'text' || tab.conflict !== undefined) return;
 		const dirty = content !== tab.preview.content;
-		tabs = tabs.map((candidate) => candidate.path === path ? { ...candidate, buffer: content, dirty, saveError: undefined } : candidate);
+		tabs = tabs.map((candidate) => candidate.path === path ? {
+			...candidate,
+			buffer: content,
+			dirty,
+			saveError: undefined,
+			metadata: dirty ? staleMetadata(candidate.metadata) : candidate.metadata
+		} : candidate);
+		if (!dirty && isSpecification(path)) void loadTabMetadata(path);
 	}
 
 	async function saveTab(path: string): Promise<boolean> {
@@ -276,6 +325,7 @@
 				const dirty = candidate.buffer !== content;
 				return { ...candidate, preview: result.preview, saving: false, dirty, saveError: undefined };
 			});
+			void refreshOpenMetadata();
 			return true;
 		} catch (error) {
 			tabs = tabs.map((candidate) => candidate.path === path ? { ...candidate, saving: false, dirty: true, saveError: errorMessage(error) } : candidate);
@@ -303,8 +353,10 @@
 				return { ...tab, state: 'error', error: 'This file was renamed or deleted outside Huzzah.' };
 			});
 			repositoryState = { status: 'ready', repository: { ...repository, tree: change.tree } };
+			void refreshOpenMetadata();
 			return;
 		}
+		void refreshOpenMetadata();
 		const tab = tabs.find((candidate) => candidate.path === change.path);
 		if (!tab || tab.preview?.kind !== 'text') return;
 		let disk: FilePreview | null = null;
@@ -333,6 +385,7 @@
 		if (tab?.conflict?.kind !== 'text') return;
 		const disk = tab.conflict;
 		tabs = tabs.map((candidate) => candidate.path === path ? { ...candidate, preview: disk, buffer: disk.content, conflict: undefined, dirty: false, saveError: undefined } : candidate);
+		void loadTabMetadata(path);
 	}
 
 	function keepLocalVersion(path: string): void {
@@ -357,6 +410,18 @@
 		if (tab.dirty) return 'EDITED';
 		return tab.preview?.kind === 'text' ? 'SAVED' : 'READ ONLY';
 	}
+	function metadataStatus(tab: OpenTab): string | null {
+		if (!isSpecification(tab.path)) return null;
+		if (tab.metadataLoading && !tab.metadata) return 'METADATA…';
+		if (!tab.metadata || tab.metadata.artifactStatus === 'missing') return 'METADATA MISSING';
+		if (tab.metadata.artifactStatus === 'invalid') return 'METADATA INVALID';
+		const statuses = [tab.metadata.highlighting.status, ...tab.metadata.sourceMaps.map((target) => target.status)];
+		if (tab.dirty || statuses.includes('stale')) return 'METADATA STALE';
+		if (statuses.includes('invalid')) return 'METADATA INVALID';
+		if (tab.metadata.sourceMaps.some((target) => target.status === 'missing')) return 'MAP TARGET MISSING';
+		if (tab.metadata.highlighting.status === 'missing') return 'HIGHLIGHTING MISSING';
+		return 'METADATA CURRENT';
+	}
 
 	onMount(() => {
 		const handleKeydown = (event: KeyboardEvent) => {
@@ -372,6 +437,7 @@
 			if (repository?.path === state.repositoryPath) {
 				projectState = state;
 				projectActionError = '';
+				void refreshOpenMetadata();
 			}
 		});
 		void window.desktop.getRepositoryState().then(applyRepositoryState).catch((error) => {
@@ -429,7 +495,7 @@
 				</div>{/if}
 
 				{#if activeTab}
-					<div class="file-bar"><div><span class="breadcrumb">{displayPath(activeTab.path)}</span><span class="breadcrumb-separator">/</span><strong>{activeTab.name}</strong></div>{#if activeTab.preview}<span class:problem={activeTab.conflict !== undefined || !!activeTab.saveError} class="file-meta">{formatBytes(activeTab.preview.size)} · {tabStatus(activeTab)}</span>{/if}</div>
+					<div class="file-bar"><div><span class="breadcrumb">{displayPath(activeTab.path)}</span><span class="breadcrumb-separator">/</span><strong>{activeTab.name}</strong></div>{#if activeTab.preview}<span class:problem={activeTab.conflict !== undefined || !!activeTab.saveError || metadataStatus(activeTab)?.includes('STALE') || metadataStatus(activeTab)?.includes('INVALID') || metadataStatus(activeTab)?.includes('MISSING')} class="file-meta">{formatBytes(activeTab.preview.size)} · {tabStatus(activeTab)}{#if metadataStatus(activeTab)} · {metadataStatus(activeTab)}{/if}</span>{/if}</div>
 					<div class="editor-content">
 						{#if activeTab.state === 'loading'}
 							<div class="loading-file" aria-live="polite"><span class="loader-line"></span><span class="loader-line short"></span><span class="loader-line medium"></span><p>READING {activeTab.name.toUpperCase()}</p></div>

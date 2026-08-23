@@ -455,6 +455,12 @@ function registerDesktopIpc(): void {
 	ipcMain.handle('project:initialize', () => projectService.initialize());
 	ipcMain.handle('project:refresh', () => projectService.refresh());
 	ipcMain.handle('project:get-sync-summary', () => projectService.getSyncSummary());
+	ipcMain.handle('project:get-generated-metadata', (_event, specificationPath: unknown) => {
+		if (typeof specificationPath !== 'string' || specificationPath.length === 0) {
+			throw new Error('A specification path is required.');
+		}
+		return projectService.getGeneratedMetadata(specificationPath);
+	});
 }
 
 function createWindow(): void {
