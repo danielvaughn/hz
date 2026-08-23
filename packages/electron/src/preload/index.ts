@@ -19,6 +19,7 @@ const desktop: DesktopApi = Object.freeze({
 	initializeProject: () => ipcRenderer.invoke('project:initialize'),
 	refreshProjectState: () => ipcRenderer.invoke('project:refresh'),
 	getSyncSummary: () => ipcRenderer.invoke('project:get-sync-summary'),
+	getReviewFixture: (fixture) => ipcRenderer.invoke('project:get-review-fixture', fixture),
 	getGeneratedMetadata: (specificationPath) => ipcRenderer.invoke('project:get-generated-metadata', specificationPath),
 	regenerateHighlighting: (request) => ipcRenderer.invoke('project:regenerate-highlighting', request),
 	onRepositoryChange: (listener) => {

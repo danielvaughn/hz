@@ -9,10 +9,11 @@
 		RepositoryChange,
 		RepositoryState,
 		RepositoryTreeNode,
-		SpecificationChange,
-		SyncSummary
+		ReviewFixtureName,
+		ReviewProposal
 	} from '../../shared/desktop';
 	import CodeViewer from './CodeViewer.svelte';
+	import ReviewPanel from './ReviewPanel.svelte';
 
 	type TextPreview = Extract<FilePreview, { kind: 'text' }>;
 	type OpenTab = {
@@ -47,8 +48,8 @@
 	let projectState = $state<HuzzahProjectState | null>(null);
 	let projectActionError = $state('');
 	let initializingProject = $state(false);
-	let loadingSyncSummary = $state(false);
-	let syncSummary = $state<SyncSummary | null>(null);
+	let loadingReview = $state(false);
+	let reviewProposal = $state<ReviewProposal | null>(null);
 	let newFileOpen = $state(false);
 	let newFilePath = $state('');
 	let newFileError = $state('');
@@ -81,7 +82,7 @@
 		repositoryError = '';
 		if (nextState.status === 'ready') {
 			newFileOpen = false;
-			syncSummary = null;
+			reviewProposal = null;
 			tabs = [];
 			activePath = null;
 			expandedPaths = new Set(nextState.repository.tree.filter((node) => node.type === 'directory').slice(0, 2).map((node) => node.path));
@@ -132,7 +133,7 @@
 			await window.desktop.closeRepository();
 			repositoryState = { status: 'empty' };
 			projectState = null;
-			syncSummary = null;
+			reviewProposal = null;
 			newFileOpen = false;
 			tabs = [];
 			activePath = null;
@@ -206,21 +207,25 @@
 		}
 	}
 
-	async function openSyncSummary(): Promise<void> {
-		if (!canSync || loadingSyncSummary) return;
+	async function openReview(fixture: ReviewFixtureName = 'comprehensive'): Promise<void> {
+		if (!canSync || loadingReview) return;
 		if (tabs.some((tab) => tab.dirty || tab.saving || tab.conflict !== undefined)) {
 			projectActionError = 'Save or resolve all open file changes before reviewing synchronization.';
 			return;
 		}
-		loadingSyncSummary = true;
+		loadingReview = true;
 		projectActionError = '';
 		try {
-			syncSummary = await window.desktop.getSyncSummary();
+			reviewProposal = await window.desktop.getReviewFixture(fixture);
 		} catch (error) {
 			projectActionError = errorMessage(error);
 		} finally {
-			loadingSyncSummary = false;
+			loadingReview = false;
 		}
+	}
+
+	function rejectReview(): void {
+		reviewProposal = null;
 	}
 
 	function projectStatus(): string {
@@ -242,10 +247,6 @@
 	function projectHasProblem(): boolean {
 		return !!projectActionError || projectState?.config.status === 'invalid' ||
 			(projectState?.git.status !== undefined && !['loading', 'ready'].includes(projectState.git.status));
-	}
-
-	function changeLabel(change: SpecificationChange): string {
-		return change.kind.toUpperCase();
 	}
 
 	function toggleDirectory(path: string): void {
@@ -504,7 +505,7 @@
 				event.preventDefault(); commandPaletteOpen = true; fileMenu = null; return;
 			}
 			if (event.key === 'Escape' && newFileOpen) { newFileOpen = false; return; }
-			if (event.key === 'Escape' && syncSummary) { syncSummary = null; return; }
+			if (event.key === 'Escape' && reviewProposal) { reviewProposal = null; return; }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') { event.preventDefault(); void chooseRepository(); }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'w' && activePath) { event.preventDefault(); void closeTab(new MouseEvent('click'), activePath); }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && activePath) { event.preventDefault(); void saveTab(activePath); }
@@ -539,7 +540,7 @@
 		<div class="repository-actions">
 			{#if repository}<button class="project-button new-file-button" onclick={showNewFile}>+ NEW FILE</button>{/if}
 			{#if repository && projectState?.config.status === 'missing'}<button class="project-button initialize-button" onclick={initializeProject} disabled={initializingProject}>{initializingProject ? 'INITIALIZING…' : 'INITIALIZE'}</button>{/if}
-			{#if repository}<button class="project-button sync-button" class:available={canSync} onclick={openSyncSummary} disabled={!canSync || loadingSyncSummary}>{loadingSyncSummary ? 'CHECKING…' : 'SYNC'}{#if specificationChanges.length > 0}<span>{specificationChanges.length}</span>{/if}</button>{/if}
+			{#if repository}<button class="project-button sync-button" class:available={canSync} onclick={() => openReview()} disabled={!canSync || loadingReview}>{loadingReview ? 'PREPARING…' : 'SYNC'}{#if specificationChanges.length > 0}<span>{specificationChanges.length}</span>{/if}</button>{/if}
 			{#if repository}<button class="close-repository-button" onclick={closeRepository}>CLOSE</button>{/if}
 			<button class="open-button" onclick={chooseRepository} disabled={loadingRepository}>
 				<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5.5h5l1.6 2h8.4v7.3a1.7 1.7 0 0 1-1.7 1.7H4.2a1.7 1.7 0 0 1-1.7-1.7V5.5Zm0 2h15M4.5 5.5V4.2c0-.4.3-.7.7-.7h4.1l1.5 2" /></svg>
@@ -549,7 +550,7 @@
 	</header>
 
 	{#if repositoryState.status === 'ready' && repository}
-		<div class="workspace">
+		<div class:review-open={reviewProposal !== null} class="workspace">
 			<aside class="sidebar">
 				<div class="panel-heading"><div><span>FILES</span><strong>{repository.name}</strong></div><span class="file-count">{visibleNodes.filter((node) => node.type === 'file').length}</span></div>
 				<div class:problem={projectHasProblem()} class="project-strip" title={projectStatus()}>{projectStatus()}</div>
@@ -598,6 +599,7 @@
 					</div>
 				{:else}<div class="welcome-state"></div>{/if}
 			</section>
+			{#if reviewProposal}<ReviewPanel proposal={reviewProposal} loading={loadingReview} onReject={rejectReview} onFixtureChange={(fixture) => void openReview(fixture)} />{/if}
 		</div>
 	{:else}
 		<section class="launch-screen">
@@ -639,21 +641,6 @@
 				{#if newFileError}<p class="new-file-error" role="alert">{newFileError}</p>{:else}<p>Missing parent directories will be created automatically.</p>{/if}
 				<footer><button type="button" onclick={() => newFileOpen = false} disabled={creatingFile}>CANCEL</button><button class="primary" type="submit" disabled={creatingFile || !newFilePath.trim()}>{creatingFile ? 'CREATING…' : 'CREATE FILE'}</button></footer>
 			</form>
-		</div>
-	</div>
-{/if}
-
-{#if syncSummary}
-	<div class="modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) syncSummary = null; }}>
-		<div class="sync-summary" role="dialog" aria-modal="true" aria-labelledby="sync-summary-title">
-			<header><div><span>SYNC / PREVIEW</span><h2 id="sync-summary-title">Changed specifications</h2></div><button aria-label="Close sync summary" onclick={() => syncSummary = null}>×</button></header>
-			<p>These specification changes are ready for synchronization. Reconciliation will be connected in a later milestone.</p>
-			<div class="sync-change-list">
-				{#each syncSummary.changes as change}
-					<div class="sync-change"><span class={`change-kind ${change.kind}`}>{changeLabel(change)}</span><div>{#if change.kind === 'renamed'}<small>{change.oldPath}</small><span>→</span>{/if}<strong>{change.path}</strong></div></div>
-				{/each}
-			</div>
-			<footer><span>HEAD {syncSummary.head.slice(0, 10)}</span><button onclick={() => syncSummary = null}>DONE</button></footer>
 		</div>
 	</div>
 {/if}

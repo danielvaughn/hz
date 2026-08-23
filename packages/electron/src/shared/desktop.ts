@@ -83,6 +83,55 @@ export type SyncSummary = {
 	changes: SpecificationChange[];
 };
 
+export const REVIEW_FIXTURE_NAMES = ['comprehensive', 'large-diff', 'error'] as const;
+export type ReviewFixtureName = (typeof REVIEW_FIXTURE_NAMES)[number];
+export type ProposalOperationKind = 'create' | 'modify' | 'rename' | 'delete';
+export type ProposalDiffLineKind = 'header' | 'context' | 'addition' | 'deletion';
+
+export type ProposalDiffLine = {
+	kind: ProposalDiffLineKind;
+	text: string;
+	oldLine?: number;
+	newLine?: number;
+};
+
+export type ProposalFileOperation = {
+	id: string;
+	kind: ProposalOperationKind;
+	path: string;
+	oldPath?: string;
+	generatedMetadata: boolean;
+	binary: boolean;
+	additions: number;
+	deletions: number;
+	diff: ProposalDiffLine[];
+};
+
+export type ReconciliationProposal = {
+	status: 'ready';
+	id: string;
+	fixture: ReviewFixtureName;
+	capturedHead: string;
+	summary: string;
+	assumptions: string[];
+	warnings: string[];
+	model: InferenceModel;
+	usage: InferenceUsage;
+	commitMessage: string;
+	operations: ProposalFileOperation[];
+};
+
+export type ReconciliationProposalError = {
+	status: 'error';
+	fixture: ReviewFixtureName;
+	capturedHead: string;
+	title: string;
+	message: string;
+	retryable: boolean;
+};
+
+export type ReviewProposal = ReconciliationProposal | ReconciliationProposalError;
+
 export const GENERATED_ARTIFACT_VERSION = 1 as const;
 export const HIGHLIGHT_TAXONOMY_VERSION = 1 as const;
 
@@ -187,6 +236,7 @@ export type DesktopApi = Readonly<{
 	initializeProject: () => Promise<HuzzahProjectState>;
 	refreshProjectState: () => Promise<HuzzahProjectState>;
 	getSyncSummary: () => Promise<SyncSummary>;
+	getReviewFixture: (fixture?: ReviewFixtureName) => Promise<ReviewProposal>;
 	getGeneratedMetadata: (specificationPath: string) => Promise<GeneratedMetadataState>;
 	regenerateHighlighting: (request: RegenerateHighlightingRequest) => Promise<RegenerateHighlightingResult>;
 	onProjectStateChange: (listener: (state: HuzzahProjectState) => void) => () => void;

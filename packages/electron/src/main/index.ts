@@ -10,6 +10,7 @@ import type {
 	HuzzahProjectState,
 	RegenerateHighlightingRequest
 } from '../shared/desktop';
+import { REVIEW_FIXTURE_NAMES, type ReviewFixtureName } from '../shared/desktop';
 import { ProjectService } from './project-service';
 import { RepositoryService } from './repository-service';
 
@@ -101,6 +102,12 @@ function registerDesktopIpc(): void {
 	ipcMain.handle('project:initialize', () => projectService.initialize());
 	ipcMain.handle('project:refresh', () => projectService.refresh());
 	ipcMain.handle('project:get-sync-summary', () => projectService.getSyncSummary());
+	ipcMain.handle('project:get-review-fixture', (_event, fixture: unknown) => {
+		if (fixture !== undefined && (typeof fixture !== 'string' || !REVIEW_FIXTURE_NAMES.includes(fixture as ReviewFixtureName))) {
+			throw new Error('An unknown review fixture was requested.');
+		}
+		return projectService.getReviewFixture(fixture as ReviewFixtureName | undefined);
+	});
 	ipcMain.handle('project:get-generated-metadata', (_event, specificationPath: unknown) => {
 		if (typeof specificationPath !== 'string' || specificationPath.length === 0) {
 			throw new Error('A specification path is required.');

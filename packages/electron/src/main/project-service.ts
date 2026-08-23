@@ -7,6 +7,8 @@ import type {
 	HuzzahProjectState,
 	GeneratedMetadataState,
 	RegenerateHighlightingResult,
+	ReviewFixtureName,
+	ReviewProposal,
 	SpecificationChange,
 	SyncSummary
 } from '../shared/desktop';
@@ -14,6 +16,7 @@ import { GitService, type GitFileChange, type GitRepositoryState } from './git-s
 import { discoverHuzzahConfig, initializeHuzzahProject } from './huzzah-config';
 import { loadGeneratedMetadata, persistGeneratedHighlighting } from './generated-metadata';
 import { HighlightingService } from './highlighting-service';
+import { buildReviewFixture } from './review-fixtures';
 
 export class ProjectService {
 	private repositoryPath: string | null = null;
@@ -109,6 +112,10 @@ export class ProjectService {
 			head: state.git.head,
 			changes: state.git.changes
 		};
+	}
+
+	async getReviewFixture(fixture: ReviewFixtureName = 'comprehensive'): Promise<ReviewProposal> {
+		return buildReviewFixture(await this.getSyncSummary(), fixture);
 	}
 
 	async getGeneratedMetadata(specificationPath: string): Promise<GeneratedMetadataState> {
