@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -7,7 +7,8 @@ import test from 'node:test';
 import {
 	generatedArtifactPath,
 	hashGeneratedText,
-	loadGeneratedMetadata
+	loadGeneratedMetadata,
+	persistGeneratedHighlighting
 } from '../src/main/generated-metadata.ts';
 
 const fixtureRoot = join(import.meta.dirname, 'fixtures/generated-metadata');
@@ -87,4 +88,44 @@ test('rejects missing artifacts and unsupported schema versions', () => fixtureR
 	const state = await loadGeneratedMetadata(root, specificationPath);
 	assert.equal(state.artifactStatus, 'invalid');
 	assert.match(state.message ?? '', /Unsupported generated artifact version/);
+}));
+
+test('refreshes highlighting without making preserved source mappings current', () => fixtureRepository(async (root) => {
+	await writeFile(join(root, specificationPath), 'Changed\n', 'utf8');
+	const state = await persistGeneratedHighlighting(root, specificationPath, [
+		{ from: 0, to: 7, category: 'action', text: 'Changed' }
+	]);
+	assert.equal(state.highlighting.status, 'current');
+	assert.equal(state.sourceMaps[0]?.status, 'stale');
+
+	const artifact = JSON.parse(await readFile(join(root, artifactPath), 'utf8')) as {
+		sourceMaps: Array<{ specificationHash?: string }>;
+	};
+	assert.ok(artifact.sourceMaps[0]?.specificationHash);
+}));
+
+test('creates a generated artifact when highlighting is the first metadata', () => fixtureRepository(async (root) => {
+	await unlink(join(root, artifactPath));
+	const state = await persistGeneratedHighlighting(root, specificationPath, [
+		{ from: 0, to: 6, category: 'action', text: 'Create' }
+	]);
+	assert.equal(state.artifactStatus, 'ready');
+	assert.equal(state.highlighting.status, 'current');
+	assert.deepEqual(state.sourceMaps, []);
+}));
+
+test('refuses to write generated metadata through a symlinked directory', () => fixtureRepository(async (root) => {
+	const outside = await mkdtemp(join(tmpdir(), 'huzzah-generated-outside-'));
+	try {
+		await rm(join(root, '.huzzah'), { recursive: true, force: true });
+		await symlink(outside, join(root, '.huzzah'));
+		await assert.rejects(
+			persistGeneratedHighlighting(root, specificationPath, [
+				{ from: 0, to: 6, category: 'action', text: 'Create' }
+			]),
+			/unsafe/
+		);
+	} finally {
+		await rm(outside, { recursive: true, force: true });
+	}
 }));

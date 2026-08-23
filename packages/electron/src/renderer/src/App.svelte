@@ -4,6 +4,8 @@
 		FilePreview,
 		GeneratedMetadataState,
 		HuzzahProjectState,
+		InferenceModel,
+		InferenceUsage,
 		RepositoryChange,
 		RepositoryState,
 		RepositoryTreeNode,
@@ -27,6 +29,12 @@
 		metadata?: GeneratedMetadataState;
 		metadataLoading?: boolean;
 		metadataRequest?: number;
+		highlighting?: {
+			status: 'running' | 'complete' | 'error';
+			model?: InferenceModel;
+			usage?: InferenceUsage;
+			error?: string;
+		};
 	};
 	type VisibleNode = RepositoryTreeNode & { depth: number };
 
@@ -45,6 +53,8 @@
 	let newFilePath = $state('');
 	let newFileError = $state('');
 	let creatingFile = $state(false);
+	let commandPaletteOpen = $state(false);
+	let fileMenu = $state<{ path: string; x: number; y: number } | null>(null);
 	let metadataRequest = 0;
 
 	let repository = $derived(repositoryState.status === 'ready' ? repositoryState.repository : null);
@@ -263,6 +273,70 @@
 		}
 	}
 
+	async function regenerateHighlighting(path: string): Promise<void> {
+		if (!repository || !isSpecification(path)) return;
+		fileMenu = null;
+		commandPaletteOpen = false;
+		const tab = tabs.find((candidate) => candidate.path === path);
+		if (!tab || tab.preview?.kind !== 'text' || tab.conflict !== undefined) return;
+		if (tab.dirty && !(await saveTab(path))) return;
+		tabs = tabs.map((candidate) => candidate.path === path
+			? { ...candidate, highlighting: { status: 'running' } }
+			: candidate);
+		try {
+			const result = await window.desktop.regenerateHighlighting({
+				repositoryPath: repository.path,
+				specificationPath: path
+			});
+			tabs = tabs.map((candidate) => candidate.path === path ? {
+				...candidate,
+				metadata: result.metadata,
+				metadataLoading: false,
+				highlighting: { status: 'complete', model: result.model, usage: result.usage }
+			} : candidate);
+		} catch (error) {
+			tabs = tabs.map((candidate) => candidate.path === path
+				? { ...candidate, highlighting: { status: 'error', error: errorMessage(error) } }
+				: candidate);
+		}
+	}
+
+	async function regenerateFromFileMenu(path: string): Promise<void> {
+		fileMenu = null;
+		let tab = tabs.find((candidate) => candidate.path === path);
+		if (!tab) {
+			const node = findFileNode(repository?.tree ?? [], path);
+			if (!node) return;
+			await openFile(node);
+			tab = tabs.find((candidate) => candidate.path === path);
+		}
+		if (tab) {
+			activePath = path;
+			await regenerateHighlighting(path);
+		}
+	}
+
+	function findFileNode(nodes: RepositoryTreeNode[], path: string): RepositoryTreeNode | null {
+		for (const node of nodes) {
+			if (node.type === 'file' && node.path === path) return node;
+			if (node.type === 'directory') {
+				const match = findFileNode(node.children ?? [], path);
+				if (match) return match;
+			}
+		}
+		return null;
+	}
+
+	function openFileMenu(event: MouseEvent, node: RepositoryTreeNode): void {
+		if (node.type !== 'file') return;
+		event.preventDefault();
+		fileMenu = { path: node.path, x: event.clientX, y: event.clientY };
+	}
+
+	function usageLabel(usage: InferenceUsage): string {
+		return `${usage.tokens.total.toLocaleString()} TOKENS · $${usage.estimatedCostUsd.toFixed(4)}`;
+	}
+
 	async function refreshOpenMetadata(): Promise<void> {
 		await Promise.all(tabs.filter((tab) => isSpecification(tab.path)).map((tab) => loadTabMetadata(tab.path)));
 	}
@@ -425,13 +499,19 @@
 
 	onMount(() => {
 		const handleKeydown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape' && commandPaletteOpen) { commandPaletteOpen = false; return; }
+			if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
+				event.preventDefault(); commandPaletteOpen = true; fileMenu = null; return;
+			}
 			if (event.key === 'Escape' && newFileOpen) { newFileOpen = false; return; }
 			if (event.key === 'Escape' && syncSummary) { syncSummary = null; return; }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') { event.preventDefault(); void chooseRepository(); }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'w' && activePath) { event.preventDefault(); void closeTab(new MouseEvent('click'), activePath); }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && activePath) { event.preventDefault(); void saveTab(activePath); }
 		};
+		const closeFileMenu = () => { fileMenu = null; };
 		window.addEventListener('keydown', handleKeydown);
+		window.addEventListener('click', closeFileMenu);
 		const unsubscribe = window.desktop.onRepositoryChange((change) => void handleRepositoryChange(change));
 		const unsubscribeProject = window.desktop.onProjectStateChange((state) => {
 			if (repository?.path === state.repositoryPath) {
@@ -444,7 +524,7 @@
 			repositoryError = errorMessage(error);
 			repositoryState = { status: 'empty' };
 		}).finally(() => { loadingRepository = false; });
-		return () => { window.removeEventListener('keydown', handleKeydown); unsubscribe(); unsubscribeProject(); };
+		return () => { window.removeEventListener('keydown', handleKeydown); window.removeEventListener('click', closeFileMenu); unsubscribe(); unsubscribeProject(); };
 	});
 </script>
 
@@ -476,7 +556,7 @@
 				<nav class="file-tree" aria-label="Repository files">
 					{#if repository.tree.length === 0}<div class="tree-empty">This repository is empty.</div>{:else}
 						{#each visibleNodes as node (node.path)}
-							<button class:active={node.type === 'file' && activePath === node.path} class="tree-row" style={`--depth: ${node.depth}`} onclick={() => node.type === 'directory' ? toggleDirectory(node.path) : openFile(node)} title={node.path}>
+							<button class:active={node.type === 'file' && activePath === node.path} class="tree-row" style={`--depth: ${node.depth}`} onclick={() => node.type === 'directory' ? toggleDirectory(node.path) : openFile(node)} oncontextmenu={(event) => openFileMenu(event, node)} title={node.path}>
 								{#if node.type === 'directory'}<svg class:expanded={expandedPaths.has(node.path)} viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg><span class="folder-icon" aria-hidden="true"></span>{:else}<span class="tree-spacer"></span><span class="file-icon" aria-hidden="true"></span>{/if}
 								<span class="tree-name">{node.name}</span>
 							</button>
@@ -495,7 +575,7 @@
 				</div>{/if}
 
 				{#if activeTab}
-					<div class="file-bar"><div><span class="breadcrumb">{displayPath(activeTab.path)}</span><span class="breadcrumb-separator">/</span><strong>{activeTab.name}</strong></div>{#if activeTab.preview}<span class:problem={activeTab.conflict !== undefined || !!activeTab.saveError || metadataStatus(activeTab)?.includes('STALE') || metadataStatus(activeTab)?.includes('INVALID') || metadataStatus(activeTab)?.includes('MISSING')} class="file-meta">{formatBytes(activeTab.preview.size)} · {tabStatus(activeTab)}{#if metadataStatus(activeTab)} · {metadataStatus(activeTab)}{/if}</span>{/if}</div>
+					<div class="file-bar"><div><span class="breadcrumb">{displayPath(activeTab.path)}</span><span class="breadcrumb-separator">/</span><strong>{activeTab.name}</strong></div><div class="file-bar-actions">{#if isSpecification(activeTab.path)}<button class="highlight-button" onclick={() => regenerateHighlighting(activeTab.path)} disabled={activeTab.highlighting?.status === 'running' || activeTab.conflict !== undefined}>{activeTab.highlighting?.status === 'running' ? 'HIGHLIGHTING…' : 'REGENERATE HIGHLIGHTING'}</button>{/if}{#if activeTab.preview}<span class:problem={activeTab.conflict !== undefined || !!activeTab.saveError || metadataStatus(activeTab)?.includes('STALE') || metadataStatus(activeTab)?.includes('INVALID') || metadataStatus(activeTab)?.includes('MISSING')} class="file-meta">{formatBytes(activeTab.preview.size)} · {tabStatus(activeTab)}{#if metadataStatus(activeTab)} · {metadataStatus(activeTab)}{/if}</span>{/if}</div></div>
 					<div class="editor-content">
 						{#if activeTab.state === 'loading'}
 							<div class="loading-file" aria-live="polite"><span class="loader-line"></span><span class="loader-line short"></span><span class="loader-line medium"></span><p>READING {activeTab.name.toUpperCase()}</p></div>
@@ -508,7 +588,8 @@
 								{:else if activeTab.saveError}
 									<div class="conflict-banner save-error" role="alert"><div><strong>SAVE FAILED</strong><span>{activeTab.saveError}</span></div><div class="banner-actions"><button class="primary" onclick={() => retrySave(activeTab.path)}>RETRY</button></div></div>
 								{/if}
-								<CodeViewer path={activeTab.path} content={activeTab.buffer ?? activeTab.preview.content} onChange={(content) => editFile(activeTab.path, content)} />
+								{#if activeTab.highlighting?.status === 'error'}<div class="highlight-result error" role="alert"><span>{activeTab.highlighting.error}</span><button onclick={() => regenerateHighlighting(activeTab.path)}>RETRY</button></div>{:else if activeTab.highlighting?.status === 'complete' && activeTab.highlighting.model && activeTab.highlighting.usage}<div class="highlight-result"><span>HIGHLIGHTED WITH {activeTab.highlighting.model.provider} / {activeTab.highlighting.model.id}</span><small>{usageLabel(activeTab.highlighting.usage)}</small></div>{/if}
+								<CodeViewer path={activeTab.path} content={activeTab.buffer ?? activeTab.preview.content} highlights={activeTab.metadata?.highlighting.status === 'current' ? activeTab.metadata.highlighting.marks ?? [] : []} onChange={(content) => editFile(activeTab.path, content)} />
 							</div>
 						{:else if activeTab.preview?.kind === 'unsupported'}
 							{#if activeTab.preview.content !== null}<div class="unsupported-header"><span>PLAIN TEXT PREVIEW</span>{activeTab.preview.reason}</div><pre class="plain-preview">{activeTab.preview.content}</pre>
@@ -530,6 +611,23 @@
 		</section>
 	{/if}
 </main>
+
+{#if fileMenu}
+	<div class="file-context-menu" style={`left: ${Math.min(fileMenu.x, window.innerWidth - 250)}px; top: ${Math.min(fileMenu.y, window.innerHeight - 70)}px`} role="menu">
+		<button role="menuitem" disabled={!isSpecification(fileMenu.path)} onclick={() => regenerateFromFileMenu(fileMenu!.path)}>REGENERATE HIGHLIGHTING</button>
+	</div>
+{/if}
+
+{#if commandPaletteOpen}
+	<div class="palette-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) commandPaletteOpen = false; }}>
+		<div class="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+			<header><span>COMMAND PALETTE</span><kbd>{shortcutKey}⇧P</kbd></header>
+			<button disabled={!activeTab || !isSpecification(activeTab.path) || activeTab.highlighting?.status === 'running'} onclick={() => activeTab && regenerateHighlighting(activeTab.path)}>
+				<strong>Regenerate Highlighting</strong><span>{activeTab && isSpecification(activeTab.path) ? activeTab.path : 'Open a specification to run this command'}</span>
+			</button>
+		</div>
+	</div>
+{/if}
 
 {#if newFileOpen}
 	<div class="modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget && !creatingFile) newFileOpen = false; }}>

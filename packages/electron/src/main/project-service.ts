@@ -1,14 +1,19 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
 import type {
 	GitState,
 	HuzzahConfigState,
 	HuzzahProjectState,
 	GeneratedMetadataState,
+	RegenerateHighlightingResult,
 	SpecificationChange,
 	SyncSummary
 } from '../shared/desktop';
 import { GitService, type GitFileChange, type GitRepositoryState } from './git-service';
 import { discoverHuzzahConfig, initializeHuzzahProject } from './huzzah-config';
-import { loadGeneratedMetadata } from './generated-metadata';
+import { loadGeneratedMetadata, persistGeneratedHighlighting } from './generated-metadata';
+import { HighlightingService } from './highlighting-service';
 
 export class ProjectService {
 	private repositoryPath: string | null = null;
@@ -18,7 +23,8 @@ export class ProjectService {
 
 	constructor(
 		private readonly onChange: (state: HuzzahProjectState) => void = () => {},
-		private readonly git = new GitService()
+		private readonly git = new GitService(),
+		private readonly highlighting = new HighlightingService()
 	) {}
 
 	open(repositoryPath: string): void {
@@ -112,6 +118,19 @@ export class ProjectService {
 			throw new Error('Generated metadata is available only for configured specification files.');
 		}
 		return loadGeneratedMetadata(repositoryPath, specificationPath);
+	}
+
+	async regenerateHighlighting(specificationPath: string): Promise<RegenerateHighlightingResult> {
+		const repositoryPath = this.requireRepository();
+		const state = await this.refresh();
+		if (state.config.status !== 'ready' || !state.config.specifications.includes(specificationPath)) {
+			throw new Error('Highlighting can be generated only for configured specification files.');
+		}
+		const specification = await readFile(resolve(repositoryPath, specificationPath), 'utf8');
+		const generated = await this.highlighting.generate(specification);
+		const metadata = await persistGeneratedHighlighting(repositoryPath, specificationPath, generated.marks);
+		this.scheduleRefresh(0);
+		return { metadata, model: generated.model, usage: generated.usage };
 	}
 
 	private requireRepository(): string {

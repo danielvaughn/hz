@@ -13,7 +13,8 @@ import type {
 	RepositoryTreeNode,
 	SaveFileRequest,
 	SaveFileResult,
-	HuzzahProjectState
+	HuzzahProjectState,
+	RegenerateHighlightingRequest
 } from '../shared/desktop';
 import { atomicSaveText, contentRevision } from './atomic-save';
 import { ProjectService } from './project-service';
@@ -318,6 +319,12 @@ function isCreateFileRequest(value: unknown): value is CreateFileRequest {
 	return typeof request.repositoryPath === 'string' && typeof request.path === 'string';
 }
 
+function isRegenerateHighlightingRequest(value: unknown): value is RegenerateHighlightingRequest {
+	if (!value || typeof value !== 'object') return false;
+	const request = value as Partial<RegenerateHighlightingRequest>;
+	return typeof request.repositoryPath === 'string' && typeof request.specificationPath === 'string';
+}
+
 async function createFile(request: CreateFileRequest): Promise<Extract<FilePreview, { kind: 'text' }>> {
 	if (!repositoryRoot || request.repositoryPath !== repositoryRoot) {
 		throw new Error('The repository changed before this file could be created.');
@@ -460,6 +467,13 @@ function registerDesktopIpc(): void {
 			throw new Error('A specification path is required.');
 		}
 		return projectService.getGeneratedMetadata(specificationPath);
+	});
+	ipcMain.handle('project:regenerate-highlighting', (_event, request: unknown) => {
+		if (!repositoryRoot || !isRegenerateHighlightingRequest(request) || request.repositoryPath !== repositoryRoot ||
+			request.specificationPath.length === 0) {
+			throw new Error('A valid highlighting request for the open repository is required.');
+		}
+		return projectService.regenerateHighlighting(request.specificationPath);
 	});
 }
 

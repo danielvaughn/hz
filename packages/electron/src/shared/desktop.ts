@@ -118,6 +118,16 @@ export type SourceMapping = {
 	source: SourceRange[];
 };
 
+export type InferenceModel = {
+	provider: string;
+	id: string;
+};
+
+export type InferenceUsage = {
+	tokens: { total: number; input: number; output: number };
+	estimatedCostUsd: number;
+};
+
 export type GeneratedArtifact = {
 	version: typeof GENERATED_ARTIFACT_VERSION;
 	specification: { path: string; hash: string };
@@ -128,6 +138,8 @@ export type GeneratedArtifact = {
 	sourceMaps: Array<{
 		path: string;
 		hash: string;
+		/** The spec snapshot these mappings describe. Absent only on legacy v1 artifacts. */
+		specificationHash?: string;
 		mappings: SourceMapping[];
 	}>;
 };
@@ -151,6 +163,17 @@ export type GeneratedMetadataState = {
 	}>;
 };
 
+export type RegenerateHighlightingRequest = {
+	repositoryPath: string;
+	specificationPath: string;
+};
+
+export type RegenerateHighlightingResult = {
+	metadata: GeneratedMetadataState;
+	model: InferenceModel;
+	usage: InferenceUsage;
+};
+
 export type DesktopApi = Readonly<{
 	platform: string;
 	getRepositoryState: () => Promise<RepositoryState>;
@@ -165,5 +188,6 @@ export type DesktopApi = Readonly<{
 	refreshProjectState: () => Promise<HuzzahProjectState>;
 	getSyncSummary: () => Promise<SyncSummary>;
 	getGeneratedMetadata: (specificationPath: string) => Promise<GeneratedMetadataState>;
+	regenerateHighlighting: (request: RegenerateHighlightingRequest) => Promise<RegenerateHighlightingResult>;
 	onProjectStateChange: (listener: (state: HuzzahProjectState) => void) => () => void;
 }>;

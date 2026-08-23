@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 import {
 	GENERATED_ARTIFACT_VERSION,
@@ -102,6 +102,13 @@ function validHighlighting(value: unknown, specificationText: string): value is 
 	});
 }
 
+export function validHighlightMarks(specificationText: string, marks: HighlightMark[]): HighlightMark[] {
+	return marks.filter((mark) => validHighlighting(
+		{ taxonomyVersion: HIGHLIGHT_TAXONOMY_VERSION, marks: [mark] },
+		specificationText
+	));
+}
+
 function validMappingsShape(value: unknown): value is SourceMapping[] {
 	return Array.isArray(value) && value.every((mapping) => isRecord(mapping) && rangeShape(mapping.specification) &&
 		Array.isArray(mapping.source) && mapping.source.length > 0 && mapping.source.every(rangeShape));
@@ -146,6 +153,26 @@ async function readRepositoryText(repositoryRoot: string, path: string): Promise
 		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing', message: 'File does not exist.' };
 		return { status: 'invalid', message: 'File could not be read as UTF-8 text.' };
 	}
+}
+
+async function ensureRepositoryDirectory(repositoryRoot: string, path: string): Promise<string> {
+	const canonicalRoot = await realpath(repositoryRoot);
+	let directory = canonicalRoot;
+	for (const part of portablePath(path).split('/')) {
+		const next = resolve(directory, part);
+		try { await mkdir(next); } catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+		}
+		const info = await lstat(next);
+		if (info.isSymbolicLink() || !info.isDirectory()) throw new Error('The generated artifact directory is unsafe.');
+		const canonicalNext = await realpath(next);
+		const fromRoot = relative(canonicalRoot, canonicalNext);
+		if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+			throw new Error('The generated artifact directory resolves outside the repository.');
+		}
+		directory = canonicalNext;
+	}
+	return directory;
 }
 
 export async function loadGeneratedMetadata(repositoryRoot: string, specificationPath: string): Promise<GeneratedMetadataState> {
@@ -194,7 +221,8 @@ export async function loadGeneratedMetadata(repositoryRoot: string, specificatio
 			continue;
 		}
 		const path = entry.path;
-		if (pathError(path) || path.startsWith('.git/') || path.startsWith('.huzzah/generated/') || seenPaths.has(path) || !isHash(entry.hash)) {
+		if (pathError(path) || path.startsWith('.git/') || path.startsWith('.huzzah/generated/') || seenPaths.has(path) ||
+			!isHash(entry.hash) || (entry.specificationHash !== undefined && !isHash(entry.specificationHash))) {
 			sourceMaps.push({ path, status: 'invalid', message: 'Source-map identity is unsafe or invalid.' });
 			continue;
 		}
@@ -208,7 +236,10 @@ export async function loadGeneratedMetadata(repositoryRoot: string, specificatio
 			sourceMaps.push({ path, status: target.status, message: target.message });
 			continue;
 		}
-		const current = specificationCurrent && hashGeneratedText(target.text) === entry.hash;
+		const mappingSpecificationHash = typeof entry.specificationHash === 'string'
+			? entry.specificationHash
+			: value.specification.hash;
+		const current = hashGeneratedText(specification.text) === mappingSpecificationHash && hashGeneratedText(target.text) === entry.hash;
 		if (!current) {
 			sourceMaps.push({ path, status: 'stale' });
 			continue;
@@ -221,4 +252,55 @@ export async function loadGeneratedMetadata(repositoryRoot: string, specificatio
 	}
 
 	return { specificationPath, artifactPath, artifactStatus: 'ready', highlighting, sourceMaps };
+}
+
+export async function persistGeneratedHighlighting(
+	repositoryRoot: string,
+	specificationPath: string,
+	marks: HighlightMark[]
+): Promise<GeneratedMetadataState> {
+	const artifactPath = generatedArtifactPath(specificationPath);
+	const specification = await readRepositoryText(repositoryRoot, specificationPath);
+	if (specification.status !== 'ready') throw new Error('The specification could not be read safely.');
+	if (validHighlightMarks(specification.text, marks).length !== marks.length) {
+		throw new Error('Generated highlighting does not match the current specification.');
+	}
+
+	let sourceMaps: unknown[] = [];
+	const existing = await readRepositoryText(repositoryRoot, artifactPath);
+	if (existing.status === 'ready') {
+		let artifact: unknown;
+		try { artifact = JSON.parse(existing.text); } catch { throw new Error('The existing generated artifact contains invalid JSON.'); }
+		if (!isRecord(artifact) || artifact.version !== GENERATED_ARTIFACT_VERSION ||
+			!isRecord(artifact.specification) || artifact.specification.path !== specificationPath ||
+			!isHash(artifact.specification.hash) || !Array.isArray(artifact.sourceMaps)) {
+			throw new Error('The existing generated artifact is invalid and cannot be updated safely.');
+		}
+		const previousSpecificationHash = artifact.specification.hash;
+		sourceMaps = artifact.sourceMaps.map((entry) => isRecord(entry) && entry.specificationHash === undefined
+			? { ...entry, specificationHash: previousSpecificationHash }
+			: entry);
+	} else if (existing.status === 'invalid') {
+		throw new Error('The existing generated artifact could not be read safely.');
+	}
+
+	const artifact = {
+		version: GENERATED_ARTIFACT_VERSION,
+		specification: { path: specificationPath, hash: hashGeneratedText(specification.text) },
+		highlighting: { taxonomyVersion: HIGHLIGHT_TAXONOMY_VERSION, marks },
+		sourceMaps
+	};
+	const lexicalTarget = repositoryPath(repositoryRoot, artifactPath);
+	if (!lexicalTarget) throw new Error('The generated artifact path is unsafe.');
+	const parent = await ensureRepositoryDirectory(repositoryRoot, relative(repositoryRoot, dirname(lexicalTarget)));
+	const target = resolve(parent, basename(lexicalTarget));
+	const temporary = `${target}.${randomUUID()}.tmp`;
+	try {
+		await writeFile(temporary, `${JSON.stringify(artifact, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+		await rename(temporary, target);
+	} catch (error) {
+		try { await unlink(temporary); } catch { /* best effort */ }
+		throw error;
+	}
+	return loadGeneratedMetadata(repositoryRoot, specificationPath);
 }

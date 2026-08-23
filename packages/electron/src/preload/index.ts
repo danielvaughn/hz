@@ -20,6 +20,7 @@ const desktop: DesktopApi = Object.freeze({
 	refreshProjectState: () => ipcRenderer.invoke('project:refresh'),
 	getSyncSummary: () => ipcRenderer.invoke('project:get-sync-summary'),
 	getGeneratedMetadata: (specificationPath) => ipcRenderer.invoke('project:get-generated-metadata', specificationPath),
+	regenerateHighlighting: (request) => ipcRenderer.invoke('project:regenerate-highlighting', request),
 	onRepositoryChange: (listener) => {
 		const handler = (_event: Electron.IpcRendererEvent, change: RepositoryChange) => listener(change);
 		ipcRenderer.on('repository:change', handler);
