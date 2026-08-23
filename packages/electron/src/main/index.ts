@@ -11,9 +11,11 @@ import type {
 	RepositoryState,
 	RepositoryTreeNode,
 	SaveFileRequest,
-	SaveFileResult
+	SaveFileResult,
+	HuzzahProjectState
 } from '../shared/desktop';
 import { atomicSaveText, contentRevision } from './atomic-save';
+import { ProjectService } from './project-service';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const SETTINGS_FILE = 'desktop-settings.json';
@@ -66,6 +68,7 @@ let watcherTimer: NodeJS.Timeout | null = null;
 let watcherGeneration = 0;
 const pendingWatcherPaths = new Set<string>();
 const internalWrites = new Map<string, number>();
+const projectService = new ProjectService(emitProjectStateChange);
 
 type DesktopSettings = { recentRepository?: string };
 
@@ -123,6 +126,7 @@ async function loadRepository(path: string): Promise<Repository> {
 	const tree = await listDirectory(resolvedPath);
 	repositoryRoot = resolvedPath;
 	startRepositoryWatcher(resolvedPath);
+	projectService.open(resolvedPath);
 	return {
 		name: basename(resolvedPath),
 		path: resolvedPath,
@@ -146,6 +150,12 @@ function emitRepositoryChange(change: RepositoryChange): void {
 	}
 }
 
+function emitProjectStateChange(state: HuzzahProjectState): void {
+	for (const window of BrowserWindow.getAllWindows()) {
+		if (!window.isDestroyed()) window.webContents.send('project:change', state);
+	}
+}
+
 function normalizeWatcherPath(path: string | Buffer | null): string | null {
 	if (!path) return null;
 	const value = path.toString().split(sep).join('/');
@@ -159,7 +169,12 @@ function startRepositoryWatcher(root: string): void {
 	repositoryWatcher = watch(root, { recursive: true }, (_eventType, filename) => {
 		if (generation !== watcherGeneration || repositoryRoot !== root) return;
 		const path = normalizeWatcherPath(filename);
-		if (path?.split('/').some((part) => SKIPPED_DIRECTORIES.has(part))) return;
+		const pathParts = path?.split('/') ?? [];
+		if (pathParts.includes('.git')) {
+			projectService.scheduleRefresh();
+			return;
+		}
+		if (pathParts.some((part) => SKIPPED_DIRECTORIES.has(part))) return;
 		if (path?.split('/').some((part) => part.startsWith('.huzzah-save-'))) return;
 		if (path) {
 			const suppressedUntil = internalWrites.get(path);
@@ -194,6 +209,7 @@ async function flushWatcherChanges(root: string, generation: number): Promise<vo
 		}
 		emitRepositoryChange({ repositoryPath: root, kind: 'file', path, change });
 	}
+	projectService.scheduleRefresh();
 }
 
 async function getRepositoryState(): Promise<RepositoryState> {
@@ -203,6 +219,7 @@ async function getRepositoryState(): Promise<RepositoryState> {
 		return { status: 'ready', repository: await loadRepository(recentRepository) };
 	} catch {
 		stopRepositoryWatcher();
+		projectService.close();
 		repositoryRoot = null;
 		return { status: 'missing', path: recentRepository };
 	}
@@ -326,6 +343,7 @@ async function saveFile(request: SaveFileRequest): Promise<SaveFileResult> {
 	}
 	const preview = await previewFile(request.path);
 	if (preview.kind !== 'text') throw new Error('The saved file could not be read back as text.');
+	projectService.scheduleRefresh();
 	return { status: 'saved', preview };
 }
 
@@ -346,6 +364,7 @@ function registerDesktopIpc(): void {
 	});
 	ipcMain.handle('repository:close', () => {
 		stopRepositoryWatcher();
+		projectService.close();
 		repositoryRoot = null;
 	});
 	ipcMain.handle('repository:read-file', (_event, path: unknown) => {
@@ -358,6 +377,10 @@ function registerDesktopIpc(): void {
 		}
 		return saveFile(request);
 	});
+	ipcMain.handle('project:get-state', () => projectService.getState());
+	ipcMain.handle('project:initialize', () => projectService.initialize());
+	ipcMain.handle('project:refresh', () => projectService.refresh());
+	ipcMain.handle('project:get-sync-summary', () => projectService.getSyncSummary());
 }
 
 function createWindow(): void {
@@ -401,5 +424,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
 	stopRepositoryWatcher();
+	projectService.close();
 	if (process.platform !== 'darwin') app.quit();
 });

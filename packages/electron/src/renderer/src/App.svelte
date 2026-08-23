@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { FilePreview, RepositoryChange, RepositoryState, RepositoryTreeNode } from '../../shared/desktop';
+	import type {
+		FilePreview,
+		HuzzahProjectState,
+		RepositoryChange,
+		RepositoryState,
+		RepositoryTreeNode,
+		SpecificationChange,
+		SyncSummary
+	} from '../../shared/desktop';
 	import CodeViewer from './CodeViewer.svelte';
 
 	type TextPreview = Extract<FilePreview, { kind: 'text' }>;
@@ -24,11 +32,18 @@
 	let tabs = $state<OpenTab[]>([]);
 	let activePath = $state<string | null>(null);
 	let expandedPaths = $state(new Set<string>());
+	let projectState = $state<HuzzahProjectState | null>(null);
+	let projectActionError = $state('');
+	let initializingProject = $state(false);
+	let loadingSyncSummary = $state(false);
+	let syncSummary = $state<SyncSummary | null>(null);
 
 	let repository = $derived(repositoryState.status === 'ready' ? repositoryState.repository : null);
 	let activeTab = $derived(tabs.find((tab) => tab.path === activePath) ?? null);
 	let visibleNodes = $derived(flattenTree(repository?.tree ?? [], expandedPaths));
 	let shortcutKey = $derived(window.desktop.platform === 'darwin' ? '⌘' : 'Ctrl');
+	let specificationChanges = $derived(projectState?.git.status === 'ready' ? projectState.git.changes : []);
+	let canSync = $derived(projectState?.config.status === 'ready' && projectState?.git.status === 'ready' && specificationChanges.length > 0);
 
 	function flattenTree(nodes: RepositoryTreeNode[], expanded: Set<string>, depth = 0): VisibleNode[] {
 		return nodes.flatMap((node) => {
@@ -49,6 +64,17 @@
 			tabs = [];
 			activePath = null;
 			expandedPaths = new Set(nextState.repository.tree.filter((node) => node.type === 'directory').slice(0, 2).map((node) => node.path));
+			projectState = null;
+			void loadProjectState(nextState.repository.path);
+		}
+	}
+
+	async function loadProjectState(repositoryPath: string): Promise<void> {
+		try {
+			const state = await window.desktop.getProjectState();
+			if (state?.repositoryPath === repositoryPath && repository?.path === repositoryPath) projectState = state;
+		} catch (error) {
+			projectActionError = errorMessage(error);
 		}
 	}
 
@@ -81,6 +107,8 @@
 		try {
 			await window.desktop.closeRepository();
 			repositoryState = { status: 'empty' };
+			projectState = null;
+			syncSummary = null;
 			tabs = [];
 			activePath = null;
 			expandedPaths = new Set();
@@ -88,6 +116,61 @@
 		} catch (error) {
 			repositoryError = errorMessage(error);
 		}
+	}
+
+	async function initializeProject(): Promise<void> {
+		if (!repository || initializingProject) return;
+		initializingProject = true;
+		projectActionError = '';
+		try {
+			projectState = await window.desktop.initializeProject();
+		} catch (error) {
+			projectActionError = errorMessage(error);
+		} finally {
+			initializingProject = false;
+		}
+	}
+
+	async function openSyncSummary(): Promise<void> {
+		if (!canSync || loadingSyncSummary) return;
+		if (tabs.some((tab) => tab.dirty || tab.saving || tab.conflict !== undefined)) {
+			projectActionError = 'Save or resolve all open file changes before reviewing synchronization.';
+			return;
+		}
+		loadingSyncSummary = true;
+		projectActionError = '';
+		try {
+			syncSummary = await window.desktop.getSyncSummary();
+		} catch (error) {
+			projectActionError = errorMessage(error);
+		} finally {
+			loadingSyncSummary = false;
+		}
+	}
+
+	function projectStatus(): string {
+		if (projectActionError) return projectActionError;
+		if (!projectState) return 'READING HUZZAH PROJECT';
+		if (projectState.config.status === 'loading') return 'READING HUZZAH PROJECT';
+		if (projectState.config.status === 'missing') return 'HUZZAH NOT INITIALIZED';
+		if (projectState.config.status === 'invalid') return `CONFIG ERROR · ${projectState.config.message}`;
+		const git = projectState.git;
+		if (git.status === 'loading') return 'READING GIT STATUS';
+		if (git.status === 'not-repository') return 'NOT A GIT REPOSITORY';
+		if (git.status === 'wrong-root') return `OPEN GIT ROOT · ${git.repositoryRoot}`;
+		if (git.status === 'missing-head') return 'GIT REPOSITORY HAS NO HEAD';
+		if (git.status === 'unavailable') return 'GIT IS UNAVAILABLE';
+		if (git.status === 'error') return `GIT ERROR · ${git.message}`;
+		return `${projectState.config.specifications.length} SPEC${projectState.config.specifications.length === 1 ? '' : 'S'} · ${git.changes.length} CHANGED`;
+	}
+
+	function projectHasProblem(): boolean {
+		return !!projectActionError || projectState?.config.status === 'invalid' ||
+			(projectState?.git.status !== undefined && !['loading', 'ready'].includes(projectState.git.status));
+	}
+
+	function changeLabel(change: SpecificationChange): string {
+		return change.kind.toUpperCase();
 	}
 
 	function toggleDirectory(path: string): void {
@@ -220,17 +303,24 @@
 
 	onMount(() => {
 		const handleKeydown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape' && syncSummary) { syncSummary = null; return; }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') { event.preventDefault(); void chooseRepository(); }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'w' && activePath) { event.preventDefault(); void closeTab(new MouseEvent('click'), activePath); }
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && activePath) { event.preventDefault(); void saveTab(activePath); }
 		};
 		window.addEventListener('keydown', handleKeydown);
 		const unsubscribe = window.desktop.onRepositoryChange((change) => void handleRepositoryChange(change));
+		const unsubscribeProject = window.desktop.onProjectStateChange((state) => {
+			if (repository?.path === state.repositoryPath) {
+				projectState = state;
+				projectActionError = '';
+			}
+		});
 		void window.desktop.getRepositoryState().then(applyRepositoryState).catch((error) => {
 			repositoryError = errorMessage(error);
 			repositoryState = { status: 'empty' };
 		}).finally(() => { loadingRepository = false; });
-		return () => { window.removeEventListener('keydown', handleKeydown); unsubscribe(); };
+		return () => { window.removeEventListener('keydown', handleKeydown); unsubscribe(); unsubscribeProject(); };
 	});
 </script>
 
@@ -243,6 +333,8 @@
 			{#if repository}<span class="status-dot" aria-hidden="true"></span><div><strong>{repository.name}</strong><span>{repository.path}</span></div>{:else}<span>NO REPOSITORY OPEN</span>{/if}
 		</div>
 		<div class="repository-actions">
+			{#if repository && projectState?.config.status === 'missing'}<button class="project-button initialize-button" onclick={initializeProject} disabled={initializingProject}>{initializingProject ? 'INITIALIZING…' : 'INITIALIZE'}</button>{/if}
+			{#if repository}<button class="project-button sync-button" class:available={canSync} onclick={openSyncSummary} disabled={!canSync || loadingSyncSummary}>{loadingSyncSummary ? 'CHECKING…' : 'SYNC'}{#if specificationChanges.length > 0}<span>{specificationChanges.length}</span>{/if}</button>{/if}
 			{#if repository}<button class="close-repository-button" onclick={closeRepository}>CLOSE</button>{/if}
 			<button class="open-button" onclick={chooseRepository} disabled={loadingRepository}>
 				<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5.5h5l1.6 2h8.4v7.3a1.7 1.7 0 0 1-1.7 1.7H4.2a1.7 1.7 0 0 1-1.7-1.7V5.5Zm0 2h15M4.5 5.5V4.2c0-.4.3-.7.7-.7h4.1l1.5 2" /></svg>
@@ -255,6 +347,7 @@
 		<div class="workspace">
 			<aside class="sidebar">
 				<div class="panel-heading"><div><span>FILES</span><strong>{repository.name}</strong></div><span class="file-count">{visibleNodes.filter((node) => node.type === 'file').length}</span></div>
+				<div class:problem={projectHasProblem()} class="project-strip" title={projectStatus()}>{projectStatus()}</div>
 				<nav class="file-tree" aria-label="Repository files">
 					{#if repository.tree.length === 0}<div class="tree-empty">This repository is empty.</div>{:else}
 						{#each visibleNodes as node (node.path)}
@@ -312,3 +405,18 @@
 		</section>
 	{/if}
 </main>
+
+{#if syncSummary}
+	<div class="modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) syncSummary = null; }}>
+		<div class="sync-summary" role="dialog" aria-modal="true" aria-labelledby="sync-summary-title">
+			<header><div><span>SYNC / PREVIEW</span><h2 id="sync-summary-title">Changed specifications</h2></div><button aria-label="Close sync summary" onclick={() => syncSummary = null}>×</button></header>
+			<p>These specification changes are ready for synchronization. Reconciliation will be connected in a later milestone.</p>
+			<div class="sync-change-list">
+				{#each syncSummary.changes as change}
+					<div class="sync-change"><span class={`change-kind ${change.kind}`}>{changeLabel(change)}</span><div>{#if change.kind === 'renamed'}<small>{change.oldPath}</small><span>→</span>{/if}<strong>{change.path}</strong></div></div>
+				{/each}
+			</div>
+			<footer><span>HEAD {syncSummary.head.slice(0, 10)}</span><button onclick={() => syncSummary = null}>DONE</button></footer>
+		</div>
+	</div>
+{/if}

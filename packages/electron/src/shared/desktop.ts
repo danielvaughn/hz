@@ -47,6 +47,37 @@ export type RepositoryChange =
 	| { repositoryPath: string; kind: 'tree'; tree: RepositoryTreeNode[] }
 	| { repositoryPath: string; kind: 'file'; path: string; change: 'changed' | 'deleted' };
 
+export type SpecificationChange =
+	| { kind: 'added' | 'modified' | 'deleted'; path: string }
+	| { kind: 'renamed'; path: string; oldPath: string };
+
+export type HuzzahConfigState =
+	| { status: 'loading' }
+	| { status: 'missing' }
+	| { status: 'invalid'; message: string }
+	| { status: 'ready'; specDirectory: string; specifications: string[] };
+
+export type GitState =
+	| { status: 'loading' }
+	| { status: 'ready'; head: string; changes: SpecificationChange[] }
+	| { status: 'not-repository' }
+	| { status: 'wrong-root'; repositoryRoot: string }
+	| { status: 'missing-head' }
+	| { status: 'unavailable' }
+	| { status: 'error'; message: string };
+
+export type HuzzahProjectState = {
+	repositoryPath: string;
+	config: HuzzahConfigState;
+	git: GitState;
+};
+
+export type SyncSummary = {
+	repositoryPath: string;
+	head: string;
+	changes: SpecificationChange[];
+};
+
 export type DesktopApi = Readonly<{
 	platform: string;
 	getRepositoryState: () => Promise<RepositoryState>;
@@ -55,4 +86,9 @@ export type DesktopApi = Readonly<{
 	readFile: (path: string) => Promise<FilePreview>;
 	writeFile: (request: SaveFileRequest) => Promise<SaveFileResult>;
 	onRepositoryChange: (listener: (change: RepositoryChange) => void) => () => void;
+	getProjectState: () => Promise<HuzzahProjectState | null>;
+	initializeProject: () => Promise<HuzzahProjectState>;
+	refreshProjectState: () => Promise<HuzzahProjectState>;
+	getSyncSummary: () => Promise<SyncSummary>;
+	onProjectStateChange: (listener: (state: HuzzahProjectState) => void) => () => void;
 }>;

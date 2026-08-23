@@ -142,6 +142,47 @@ button:focus-visible,
   display: flex;
   height: 100%;
 }
+.project-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 100%;
+  padding: 0 13px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.11em;
+}
+.project-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--panel-hover);
+}
+.project-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+.initialize-button {
+  color: #c9a96f;
+}
+.sync-button.available {
+  color: #e2bd7a;
+  background: rgba(217, 164, 80, 0.08);
+}
+.sync-button span {
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #17140e;
+  font-size: 8px;
+  letter-spacing: 0;
+}
 .open-button {
   display: flex;
   align-items: center;
@@ -211,10 +252,24 @@ kbd {
 }
 .sidebar {
   display: grid;
-  grid-template-rows: 62px minmax(0, 1fr) 31px;
+  grid-template-rows: 62px 27px minmax(0, 1fr) 31px;
   min-height: 0;
   border-right: 1px solid var(--line);
   background: var(--panel);
+}
+.project-strip {
+  overflow: hidden;
+  padding: 9px 13px 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: #74776d;
+  font: 650 7px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-strip.problem {
+  color: #c98471;
+  background: rgba(210, 123, 101, 0.045);
 }
 .panel-heading {
   display: flex;
@@ -856,6 +911,128 @@ kbd {
   text-overflow: ellipsis;
   color: var(--text-muted);
   font-size: 9px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  background: rgba(5, 6, 5, 0.72);
+  backdrop-filter: blur(3px);
+}
+.sync-summary {
+  display: grid;
+  grid-template-rows: auto auto minmax(100px, 1fr) auto;
+  width: min(620px, 100%);
+  max-height: min(660px, calc(100vh - 60px));
+  overflow: hidden;
+  border: 1px solid #3b3d36;
+  background: #141512;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+.sync-summary > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 22px 24px 17px;
+  border-bottom: 1px solid var(--line);
+}
+.sync-summary > header span {
+  color: var(--accent);
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.17em;
+}
+.sync-summary h2 {
+  margin: 9px 0 0;
+  color: var(--text);
+  font: 600 22px/1.2 var(--font-display);
+}
+.sync-summary > header button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 20px;
+}
+.sync-summary > p {
+  margin: 0;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-secondary);
+  font: 10px/1.55 var(--font-mono);
+}
+.sync-change-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.sync-change {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  align-items: center;
+  min-height: 43px;
+  padding: 6px 24px;
+}
+.sync-change:hover {
+  background: rgba(255, 255, 255, 0.022);
+}
+.change-kind {
+  color: #acada5;
+  font: 700 7px/1 var(--font-mono);
+  letter-spacing: 0.11em;
+}
+.change-kind.added { color: #91aa71; }
+.change-kind.deleted { color: var(--danger); }
+.change-kind.renamed { color: #7e9fb2; }
+.change-kind.modified { color: var(--accent); }
+.sync-change > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.sync-change strong,
+.sync-change small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-change strong {
+  color: #cac8c1;
+  font-size: 10px;
+  font-weight: 500;
+}
+.sync-change small,
+.sync-change > div > span {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+.sync-summary > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 55px;
+  padding: 0 16px 0 24px;
+  border-top: 1px solid var(--line);
+  color: var(--text-muted);
+  font: 650 8px/1 var(--font-mono);
+  letter-spacing: 0.09em;
+}
+.sync-summary > footer button {
+  height: 31px;
+  padding: 0 15px;
+  border: 1px solid #6f5a32;
+  background: var(--accent-soft);
+  color: #dfb873;
+  cursor: pointer;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.12em;
 }
 .error-notice {
   border-color: var(--danger);
