@@ -16,6 +16,7 @@
 	let selectedId = $state('');
 	let width = $state(650);
 	let commitMessage = $state('');
+	let commitDescription = $state('');
 	let dragging = $state(false);
 	let initializedProposalId = $state('');
 
@@ -31,6 +32,7 @@
 		initializedProposalId = readyProposal.id;
 		selectedId = sourceFiles[0]?.id ?? readyProposal.operations[0]?.id ?? '';
 		commitMessage = readyProposal.commitMessage;
+		commitDescription = readyProposal.summary;
 	});
 
 	function label(file: ProposalFileOperation): string {
@@ -67,19 +69,6 @@
 
 <aside class:dragging class="review-panel" style={`width: ${width}px`} aria-label="Reconciliation proposal review">
 	<button class="review-resize" aria-label="Resize review panel" title="Drag to resize" onpointerdown={beginResize}><span></span></button>
-	<header class="review-header">
-		<div><span class="eyebrow">SYNC / FIXTURE REVIEW</span><h2>Proposed changes</h2></div>
-		<div class="review-header-actions">
-			<label>SCENARIO
-				<select value={proposal.fixture} disabled={loading} onchange={(event) => onFixtureChange(event.currentTarget.value as ReviewFixtureName)}>
-					<option value="comprehensive">FULL PROPOSAL</option>
-					<option value="large-diff">LARGE DIFF</option>
-					<option value="error">ERROR STATE</option>
-				</select>
-			</label>
-			<button class="review-close" aria-label="Close proposal" onclick={onReject}>×</button>
-		</div>
-	</header>
 
 	{#if loading}
 		<div class="review-loading" aria-live="polite"><span></span><strong>PREPARING FIXTURE</strong><small>Assembling a deterministic proposal…</small></div>
@@ -94,26 +83,12 @@
 		</div>
 	{:else}
 		<section class="review-overview">
-			<div class="review-summary">
-				<span class="eyebrow">RECONCILIATION SUMMARY</span>
-				<p>{proposal.summary}</p>
-			</div>
-			<div class="review-metrics" aria-label="Proposal metrics">
-				<div><strong>{proposal.operations.length}</strong><span>FILES</span></div>
-				<div><strong class="positive">+{additions}</strong><span>ADDED</span></div>
-				<div><strong class="negative">−{deletions}</strong><span>REMOVED</span></div>
-				<div><strong>{proposal.usage.tokens.total.toLocaleString()}</strong><span>TOKENS</span></div>
-			</div>
-			<div class="review-notes">
-				<details open><summary>ASSUMPTIONS <span>{proposal.assumptions.length}</span></summary><ul>{#each proposal.assumptions as assumption}<li>{assumption}</li>{/each}</ul></details>
-				<details open><summary>WARNINGS <span>{proposal.warnings.length}</span></summary><ul class="warnings">{#each proposal.warnings as warning}<li>{warning}</li>{/each}</ul></details>
-			</div>
-			<div class="model-strip"><span>{proposal.model.provider} / {proposal.model.id}</span><span>${proposal.usage.estimatedCostUsd.toFixed(4)} EST.</span><span>HEAD {proposal.capturedHead.slice(0, 10)}</span></div>
+			<div class="model-strip"><span>{proposal.model.provider} / {proposal.model.id}</span><span>{proposal.usage.tokens.total.toLocaleString()} TOKENS</span><span>${proposal.usage.estimatedCostUsd.toFixed(4)} EST.</span><span>HEAD {proposal.capturedHead.slice(0, 10)}</span></div>
 		</section>
 
 		<div class="review-files-and-diff">
 			<nav class="affected-files" aria-label="Affected files">
-				<header><span>AFFECTED FILES</span><strong>{proposal.operations.length}</strong></header>
+				<header><span>AFFECTED FILES</span><div><strong>{proposal.operations.length}</strong><i>+{additions}</i><b>−{deletions}</b></div></header>
 				<div class="file-operation-list">
 					{#each sourceFiles as file (file.id)}
 						<button class:active={selected?.id === file.id} onclick={() => selectedId = file.id}>
@@ -153,9 +128,18 @@
 			</section>
 		</div>
 
+		<div class="review-notes">
+			<details open><summary>ASSUMPTIONS <span>{proposal.assumptions.length}</span></summary><ul>{#each proposal.assumptions as assumption}<li>{assumption}</li>{/each}</ul></details>
+			<details open><summary>WARNINGS <span>{proposal.warnings.length}</span></summary><ul class="warnings">{#each proposal.warnings as warning}<li>{warning}</li>{/each}</ul></details>
+		</div>
+
 		<footer class="review-footer">
-			<label for="commit-message">COMMIT MESSAGE</label>
-			<div class="commit-row"><input id="commit-message" bind:value={commitMessage} spellcheck="false" /><button class="reject" onclick={onReject}>REJECT</button><button class="approve" disabled title="Approval is enabled in Milestone 9">APPROVE &amp; COMMIT</button></div>
+			<div class="commit-editor">
+				<label for="commit-message">COMMIT MESSAGE</label>
+				<input id="commit-message" bind:value={commitMessage} spellcheck="false" />
+				<textarea id="commit-description" aria-label="Commit description" bind:value={commitDescription} spellcheck="true" rows="3"></textarea>
+			</div>
+			<div class="commit-actions"><button class="reject" onclick={onReject}>REJECT</button><button class="approve" disabled title="Approval is enabled in Milestone 9">APPROVE &amp; COMMIT</button></div>
 			<small>FIXTURE MODE · APPROVAL REMAINS DISABLED IN MILESTONE 6</small>
 		</footer>
 	{/if}
