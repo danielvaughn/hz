@@ -18,8 +18,6 @@
 	};
 	type VisibleNode = RepositoryTreeNode & { depth: number };
 
-	const SAVE_DEBOUNCE_MS = 550;
-	const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	let repositoryState = $state<RepositoryState>({ status: 'empty' });
 	let loadingRepository = $state(true);
 	let repositoryError = $state('');
@@ -44,19 +42,7 @@
 		return error instanceof Error ? error.message : 'An unexpected desktop error occurred.';
 	}
 
-	function clearSaveTimer(path: string): void {
-		const timer = saveTimers.get(path);
-		if (timer) clearTimeout(timer);
-		saveTimers.delete(path);
-	}
-
-	function clearAllSaveTimers(): void {
-		for (const timer of saveTimers.values()) clearTimeout(timer);
-		saveTimers.clear();
-	}
-
 	function applyRepositoryState(nextState: RepositoryState): void {
-		clearAllSaveTimers();
 		repositoryState = nextState;
 		repositoryError = '';
 		if (nextState.status === 'ready') {
@@ -66,15 +52,18 @@
 		}
 	}
 
-	async function flushPendingSaves(): Promise<boolean> {
-		for (const tab of tabs) {
-			if (tab.dirty && !(await saveTab(tab.path))) return false;
+	function confirmDiscardChanges(scope: string, candidates = tabs): boolean {
+		if (candidates.some((tab) => tab.saving)) {
+			window.alert('A file save is still in progress. Try again when it finishes.');
+			return false;
 		}
-		return true;
+		const changed = candidates.filter((tab) => tab.dirty || tab.conflict !== undefined || !!tab.saveError);
+		if (changed.length === 0) return true;
+		return window.confirm(`Discard unsaved changes ${scope}?`);
 	}
 
 	async function chooseRepository(): Promise<void> {
-		if (loadingRepository || !(await flushPendingSaves())) return;
+		if (loadingRepository || !confirmDiscardChanges('before opening another repository')) return;
 		loadingRepository = true;
 		repositoryError = '';
 		try {
@@ -88,10 +77,9 @@
 	}
 
 	async function closeRepository(): Promise<void> {
-		if (!(await flushPendingSaves())) return;
+		if (!confirmDiscardChanges('and close this repository')) return;
 		try {
 			await window.desktop.closeRepository();
-			clearAllSaveTimers();
 			repositoryState = { status: 'empty' };
 			tabs = [];
 			activePath = null;
@@ -122,25 +110,14 @@
 		}
 	}
 
-	function scheduleSave(path: string): void {
-		clearSaveTimer(path);
-		saveTimers.set(path, setTimeout(() => {
-			saveTimers.delete(path);
-			void saveTab(path);
-		}, SAVE_DEBOUNCE_MS));
-	}
-
 	function editFile(path: string, content: string): void {
 		const tab = tabs.find((candidate) => candidate.path === path);
 		if (!tab || tab.preview?.kind !== 'text' || tab.conflict !== undefined) return;
 		const dirty = content !== tab.preview.content;
 		tabs = tabs.map((candidate) => candidate.path === path ? { ...candidate, buffer: content, dirty, saveError: undefined } : candidate);
-		if (dirty) scheduleSave(path);
-		else clearSaveTimer(path);
 	}
 
 	async function saveTab(path: string): Promise<boolean> {
-		clearSaveTimer(path);
 		const tab = tabs.find((candidate) => candidate.path === path);
 		if (tab?.saving) return false;
 		if (!tab?.dirty) return !tab?.conflict && !tab?.saveError;
@@ -159,7 +136,6 @@
 				const dirty = candidate.buffer !== content;
 				return { ...candidate, preview: result.preview, saving: false, dirty, saveError: undefined };
 			});
-			if (tabs.find((candidate) => candidate.path === path)?.dirty) scheduleSave(path);
 			return true;
 		} catch (error) {
 			tabs = tabs.map((candidate) => candidate.path === path ? { ...candidate, saving: false, dirty: true, saveError: errorMessage(error) } : candidate);
@@ -170,8 +146,8 @@
 	async function closeTab(event: MouseEvent, path: string): Promise<void> {
 		event.stopPropagation();
 		const originalIndex = tabs.findIndex((tab) => tab.path === path);
-		if (originalIndex < 0 || !(await saveTab(path))) return;
-		clearSaveTimer(path);
+		const tab = tabs[originalIndex];
+		if (!tab || tab.saving || !confirmDiscardChanges(`in ${tab.name}`, [tab])) return;
 		const wasActive = activePath === path;
 		tabs = tabs.filter((tab) => tab.path !== path);
 		if (wasActive) activePath = tabs[Math.min(originalIndex, tabs.length - 1)]?.path ?? null;
@@ -181,10 +157,6 @@
 		if (!repository || change.repositoryPath !== repository.path) return;
 		if (change.kind === 'tree') {
 			const filePaths = new Set(collectFilePaths(change.tree));
-			for (const tab of tabs) {
-				if (filePaths.has(tab.path) || tab.state === 'loading') continue;
-				clearSaveTimer(tab.path);
-			}
 			tabs = tabs.map((tab) => {
 				if (filePaths.has(tab.path) || tab.state === 'loading') return tab;
 				if (tab.dirty || tab.saving) return { ...tab, conflict: null, dirty: true };
@@ -203,7 +175,6 @@
 		if (!current) return;
 		if (current.dirty || current.saving) {
 			tabs = tabs.map((candidate) => candidate.path === change.path ? { ...candidate, conflict: disk, dirty: true } : candidate);
-			clearSaveTimer(change.path);
 			return;
 		}
 		if (disk?.kind === 'text') {
@@ -229,7 +200,7 @@
 		if (tab?.conflict?.kind !== 'text') return;
 		const disk = tab.conflict;
 		tabs = tabs.map((candidate) => candidate.path === path ? { ...candidate, preview: disk, conflict: undefined, dirty: true, saveError: undefined } : candidate);
-		scheduleSave(path);
+		void saveTab(path);
 	}
 
 	function retrySave(path: string): void { void saveTab(path); }
@@ -259,7 +230,7 @@
 			repositoryError = errorMessage(error);
 			repositoryState = { status: 'empty' };
 		}).finally(() => { loadingRepository = false; });
-		return () => { window.removeEventListener('keydown', handleKeydown); unsubscribe(); clearAllSaveTimers(); };
+		return () => { window.removeEventListener('keydown', handleKeydown); unsubscribe(); };
 	});
 </script>
 

@@ -12,7 +12,7 @@ The Electron main process lives in `src/main`, the isolated preload bridge in `s
 
 ## Repository editor
 
-The desktop app can open or close a local repository, restore the most recently opened repository, browse its files, and open multiple tabs. Supported UTF-8 text files use CodeMirror and save atomically after a short debounce; unsupported, binary, symlinked, and oversized files remain read-only.
+The desktop app can open or close a local repository, restore the most recently opened repository, browse its files, and open multiple tabs. Supported UTF-8 text files use CodeMirror and save atomically on `Command/Ctrl + S`; unsupported, binary, symlinked, and oversized files remain read-only. Closing a tab or repository with unsaved edits requires explicit confirmation before those edits are discarded.
 
 The repository is watched for external creates, renames, edits, and deletions. The tree refreshes automatically, clean tabs reload from disk, and a revision check surfaces an explicit choice instead of overwriting when a file changes while a local edit is pending.
 

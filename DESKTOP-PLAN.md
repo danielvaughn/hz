@@ -7,7 +7,7 @@ Build the Electron scaffold into a repository-aware editor that satisfies `DESKT
 ## Working principles
 
 - Keep Electron's renderer isolated from Node. Filesystem, Git, agent, and process access live in the main process behind a narrow preload API.
-- Treat the filesystem and Git as authoritative. Renderer state is a view of repository state, not a second persistence layer.
+- Treat the filesystem and Git as authoritative for saved repository state. Unsaved renderer buffers are temporary and clearly identified.
 - Establish data contracts before adding model behavior. Hashing, metadata validation, proposals, and file operations should be testable with fixtures.
 - Never let proposal generation mutate the live repository.
 - Reuse focused PoC code where its contracts still fit; do not migrate the PoC's monolithic page state or browser persistence model.
@@ -49,15 +49,16 @@ Exit criteria: a user can open a repository, browse it, open several text files,
 Turn the browser into a dependable local editor without adding Huzzah behavior yet.
 
 - Make supported text files editable.
-- Auto-save changes after a short debounce.
+- Save changes only on an explicit Save action or Command/Ctrl+S shortcut.
 - Write files safely so a failed write does not truncate the original.
 - Watch the repository for internal and external changes.
 - Refresh the tree when files are created, renamed, or deleted externally.
 - Reload an unmodified open tab after an external change.
-- Surface a conflict instead of overwriting when a file changes during a pending local save.
+- Surface a conflict instead of overwriting when a file changes while local edits are unsaved or a save is pending.
+- Require confirmation before closing a tab or repository with unsaved edits.
 - Prevent watcher events caused by Huzzah's own save from producing reload loops.
 
-Exit criteria: files edited in Huzzah and another editor converge on disk without silent data loss.
+Exit criteria: explicitly saved files edited in Huzzah and another editor converge on disk without silent data loss.
 
 ## Milestone 3: Huzzah project discovery and Git status
 

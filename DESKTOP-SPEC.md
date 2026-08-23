@@ -26,8 +26,8 @@ A repository is Huzzah-enabled when it contains `.huzzah/config.json`:
 - Open files appear as tabs above the main editor, with one active tab.
 - All supported text files are editable.
 - Binary and unsupported files are visible but read-only.
-- Text changes save automatically to disk after a short debounce.
-- The filesystem is authoritative; tabs do not keep separate unsaved buffers.
+- Text changes remain in a clearly marked unsaved buffer until the user invokes Save or Command/Ctrl+S.
+- The filesystem is authoritative for saved repository state; unsaved buffers are temporary and require confirmation before being discarded.
 - Internal and external filesystem changes are detected automatically.
 
 ## Sync availability
